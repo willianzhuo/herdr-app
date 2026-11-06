@@ -73,6 +73,11 @@ Install: drag Herdr Custom.app to Applications, then open the installed app.
 
 功能：加宽 Tab；拖动终端面板顶部中央的把手到另一 Tab，或拖到 Tab
 栏右侧空白处创建新 Tab。运行中的终端进程会保留，仅支持同一工作区。
+Traex：支持 Agent 名称识别和官方 Logo；状态上报已测试 Traex 0.214.1。
+旧版 0.213.1 的测试未上报状态，已有旧会话不会被自动重启。
+Traex recognition uses the official logo. Native agent status was verified with
+Traex 0.214.1; the 0.213.1 control did not report status. Old sessions stay running.
+
 Features: wider tabs; drag a pane's top-center grip onto another tab to merge,
 or onto the tab-strip blank area to detach. Moves preserve the running terminal
 and work within one workspace.

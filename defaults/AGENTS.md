@@ -749,7 +749,7 @@ from one table, so every mod shows the same, and the app's own toasts
 else the program the terminal runs (an interpreter shows what it runs:
 `node .../vite` is Vite, `npx vitest` is Vitest); shells are `shell`,
 anything unlisted is `program` with a color of its own. The built-in table
-has 120 programs (agents, editors, runtimes, tools, databases, infra);
+has 123 programs (agents, editors, runtimes, tools, databases, infra);
 `programs.json` here adds to it or changes entries field by field:
 
 ```json
@@ -780,6 +780,12 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
   Invalid JSON is reported in `programs.error` (a valid file has no error).
 - It follows what runs in the terminal now (lazygit, nvim), else what it
   started with.
+
+Traex is launched with `traex` and reports its agent identity as `traecli`.
+The table maps both to Traex and uses the official TRAE mark. Native status
+reporting was verified with Traex 0.214.1 and core 0.1.18 (working, done, idle,
+and blocked for permission). The 0.213.1 control session did not report status;
+existing older sessions are not restarted or modified automatically.
 
 ## Mods: `mods/<name>/`
 

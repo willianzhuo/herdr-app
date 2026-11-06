@@ -385,6 +385,8 @@ mod tests {
     #[test]
     fn agents_shells_tools_and_what_interpreters_run() {
         assert_eq!(key(Some("claude-code"), &["/bin/zsh"]), "claude");
+        assert_eq!(key(Some("traecli"), &["/bin/bash"]), "traex");
+        assert_eq!(key(None, &["/home/user/.local/bin/traex"]), "traex");
         assert_eq!(key(Some("grok-build"), &["/bin/zsh"]), "grok");
         assert_eq!(key(Some("dsh-tui"), &["/bin/zsh"]), "dsh-tui");
         assert_eq!(key(None, &["dsh-tui"]), "dsh-tui");

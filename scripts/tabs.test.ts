@@ -35,5 +35,6 @@ for (const file of ["defaults/mods/tabs/main.js", "personal-config/tabs-copy-mai
     expect(title({ ...tab, name: "Pinned task", named: true }, all[1], all, {})).toBe("Pinned task");
     expect(title({ ...tab, name: "Codex", named: true }, all[1], all, {})).toBe("second session");
     expect(title(tab, { ...all[1], title: "Files", terminal: null }, all, {})).toBe("Files");
+    expect(title(tab, { ...all[1], title: "[ ! ] Action Required | Own session", program: { key: "traex" } }, all, {})).toBe("Own session");
   });
 }

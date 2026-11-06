@@ -30,8 +30,9 @@ const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
 
 // Resolve each agent by its own terminal address, never by its containing tab.
 function agentTitle(agent, pane, terminal) {
-  return clean(terminal?.report?.title) || clean(pane?.title) || clean(agent.title)
+  const title = clean(terminal?.report?.title) || clean(pane?.title) || clean(agent.title)
     || terminal?.name || agent.program?.name || agent.address;
+  return agent.program?.key === "traex" ? title.replace(/^Action Required\s*\|\s*/i, "") : title;
 }
 const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
 // A sub-agent without a pane isn't in agents(): its raw word, error counting as

@@ -56,6 +56,7 @@ test("agent names come from their own session, never a tab label", () => {
   expect(title(agent, { title: "Own panel title" }, {})).toBe("Own panel title");
   expect(title(agent, null, {})).toBe("Own terminal title");
   expect(title({ ...agent, title: "" }, null, {})).toBe("Codex");
+  expect(title({ ...agent, title: "[ ! ] Action Required | Own session", program: { key: "traex" } }, null, {})).toBe("Own session");
 });
 
 // Lightweight element descriptions: execute conditional builders and retain text,

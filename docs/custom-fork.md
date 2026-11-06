@@ -29,8 +29,31 @@ To apply these mod changes to an older running custom app, copy
 the sidebar layout at it. Update an existing directory-routing tab bar from
 `personal-config/tabs-copy-main.js`, keeping its companion directory helper and
 machine map. These changes can hot reload without restarting terminals.
-Session titles remain dependent on what each agent actually reports; the separate
-Traex lifecycle/session adapter is not included in this naming change.
+Session titles remain dependent on what each agent actually reports.
+
+## Traex recognition and native status
+
+The program table maps the executable `traex` and reported identity `traecli`
+to Traex, using the unchanged logo from the official TRAE GitHub organization
+(see `defaults/icons/SOURCE-Traex.txt`). It is a colored image, not a tinted glyph.
+The agent list and tab bar remove Traex's transient `Action Required |` prefix
+from the session title.
+
+An isolated test on a remote Linux development machine with core 0.1.18 confirmed
+Traex 0.214.1 natively emits OSC 7501: idle, working, done, and blocked with
+kind=permission. The app displayed it as an agent, showed Needs you, and posted
+an approval toast while another tab was selected. Standard startup, inline mode,
+and embedded-server mode were exercised without any custom status hook.
+An explicitly pinned 0.213.1 process completed the same prompt but never reported
+status. Existing old processes are left running; new sessions should use the
+verified newer version. No core restart or global hook installation is required.
+
+An early probe began with the CLI symlink on 0.213.1; the CLI's own startup updater
+switched it to 0.214.1. Runtime `/proc/<pid>/exe` checks and a pinned-version control
+confirmed which versions actually produced the reports. An invalid-model startup
+failure was also observed, but native error-state notifications and full session
+names beyond the terminal-provided title have not been verified. This integration
+passes through native reports rather than inferring states from screen text.
 
 ## Branches and remotes
 

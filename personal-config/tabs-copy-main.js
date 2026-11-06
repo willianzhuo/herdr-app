@@ -14,8 +14,9 @@ function find(node, id) {
 
 function tabTitle(tab, panel, all, record) {
   const program = panel?.program;
-  const ownTitle = (record?.report?.title || panel?.title || "").trim()
+  let ownTitle = (record?.report?.title || panel?.title || "").trim()
     .replace(/^[^\p{L}\p{N}~/]+/u, "");
+  if (program?.key === "traex") ownTitle = ownTitle.replace(/^Action Required\s*\|\s*/i, "");
   // Explicit descriptive tab names stay fixed; old program-name tabs follow focus.
   const generic = !tab.named || /^\d+$|^tb\d+$/.test(tab.name)
     || all.some(p => p.tab === tab.id && [p.program?.name, p.program?.key].includes(tab.name));
