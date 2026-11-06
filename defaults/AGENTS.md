@@ -782,7 +782,8 @@ has 123 programs (agents, editors, runtimes, tools, databases, infra);
   started with.
 
 Traex is launched with `traex` and reports its agent identity as `traecli`.
-The table maps both to Traex and uses the official TRAE mark. Native status
+The table maps both to Traex and uses the official TRAE mark. Codex uses the
+current official ChatGPT icon in this custom fork. Native status
 reporting was verified with Traex 0.214.1 and core 0.1.18 (working, done, idle,
 and blocked for permission). The 0.213.1 control session did not report status;
 existing older sessions are not restarted or modified automatically.

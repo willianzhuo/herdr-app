@@ -31,6 +31,9 @@ the sidebar layout at it. Update an existing directory-routing tab bar from
 machine map. These changes can hot reload without restarting terminals.
 Session titles remain dependent on what each agent actually reports.
 
+The Codex agent uses the current official ChatGPT icon at the fork owner's
+request. Its unchanged source asset is recorded in `defaults/icons/SOURCE-ChatGPT.txt`.
+
 ## Traex recognition and native status
 
 The program table maps the executable `traex` and reported identity `traecli`

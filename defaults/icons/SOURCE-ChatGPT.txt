@@ -1,0 +1,7 @@
+ChatGPT brand icon, used for Codex agents at the fork owner's request.
+Source: current ChatGPT website's official 180px icon, downloaded unchanged.
+https://chatgpt.com/
+https://chatgpt.com/cdn/assets/favicon-180x180.9e0103ce69.png
+https://openai.com/brand/
+Retrieved: 2026-11-06
+ChatGPT and the logo are OpenAI trademarks. Used to identify the related agent.
