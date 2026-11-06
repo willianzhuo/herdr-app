@@ -1330,13 +1330,28 @@ impl MacWindow {
             let fullscreen = lock.is_fullscreen();
             let exiting = lock.is_exiting_fullscreen;
             let plan = app_hide_plan(&mut lock.hide_after_fullscreen_exit, fullscreen, exiting);
+            let closed = lock.closed.clone();
             // toggleFullScreen: may synchronously call delegates that lock this state.
             drop(lock);
             match plan {
                 AppHidePlan::Now => false,
                 AppHidePlan::WaitForExit => true,
                 AppHidePlan::ExitFullscreen => {
-                    window.toggleFullScreen_(nil);
+                    // Also leave windowShouldClose: before asking AppKit to
+                    // change Spaces; a red-button close is still being validated.
+                    let window_ptr = window as usize;
+                    DispatchQueue::main().exec_async(move || {
+                        if_window_not_closed(closed, || unsafe {
+                            let window = window_ptr as id;
+                            let state = get_window_state(&*window);
+                            let lock = state.lock();
+                            let exit = lock.is_fullscreen() && !lock.is_exiting_fullscreen;
+                            drop(lock);
+                            if exit {
+                                window.toggleFullScreen_(nil);
+                            }
+                        });
+                    });
                     true
                 }
             }

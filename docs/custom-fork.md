@@ -76,7 +76,8 @@ not the independently running core or terminal processes.
 
 The macOS red close button still hides the app so background agent notifications
 continue. When the active managed window is in native fullscreen, hiding first
-requests one fullscreen exit, waits for AppKit's did-exit delegate, then hides
+queues one fullscreen exit after the close delegate returns, waits for AppKit's
+did-exit delegate, then hides
 asynchronously without holding the window state lock. Repeated requests coalesce;
 a hide during an already-running exit waits instead of toggling fullscreen back.
 A failed native exit clears the pending request so another click can retry.
