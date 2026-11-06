@@ -9,6 +9,8 @@
 //! A build from source never updates: only `scripts/package` (the release
 //! builds) sets `HERDR_APP_RELEASE`. `scripts/install-macos` makes a
 //! Herdr.app too, so the install's shape alone can't tell.
+//! Custom macOS packages instead set `HERDR_CUSTOM_VERSION` and use this
+//! fork's GitHub Releases, keeping core updates a separate manual action.
 //!
 //! The core is checked on the same clock (`core/latest.json`): a newer core
 //! of the same generation is offered (also applied after an app update), unless
@@ -23,6 +25,15 @@ use std::time::Duration;
 const EVERY: Duration = Duration::from_secs(60 * 60);
 /// After a failed check or download (offline, a damaged file).
 const RETRY: Duration = Duration::from_secs(30 * 60);
+
+// Only the custom packager opts into this channel. Source builds remain local;
+// official release builds retain their original service and version scheme.
+const CUSTOM: bool = option_env!("HERDR_CUSTOM_VERSION").is_some();
+const CUSTOM_REPO: &str = "willianzhuo/herdr-app";
+pub const VERSION: &str = match option_env!("HERDR_CUSTOM_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
 /// Where this app is installed: the folder (Linux) or bundle (macOS) an
 /// update replaces. Read once: after a swap this process's own file is gone.
@@ -45,7 +56,9 @@ fn find_root() -> Option<PathBuf> {
 }
 
 /// The folder or bundle name inside a release tarball.
-const PACKED: &str = if cfg!(target_os = "macos") { "Herdr.app" } else { "herdr-app" };
+const PACKED: &str = if cfg!(target_os = "macos") {
+    if CUSTOM { "Herdr Custom.app" } else { "Herdr.app" }
+} else { "herdr-app" };
 
 fn beside(root: &Path, suffix: &str) -> PathBuf {
     let mut name = root.file_name().unwrap_or_default().to_os_string();
@@ -75,6 +88,7 @@ fn releases() -> String {
 
 /// The version downloaded and waiting for a restart.
 static READY: Mutex<Option<String>> = Mutex::new(None);
+static APP_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 pub fn ready() -> Option<String> {
     READY.lock().unwrap().clone()
@@ -117,18 +131,19 @@ pub fn set_core(version: Option<String>, managed: Option<String>) {
 }
 
 fn checks_app() -> Option<PathBuf> {
-    root().filter(|_| option_env!("HERDR_APP_RELEASE").is_some() || std::env::var_os("HERDR_RELEASES_URL").is_some())
+    root().filter(|_| CUSTOM || option_env!("HERDR_APP_RELEASE").is_some() || std::env::var_os("HERDR_RELEASES_URL").is_some())
 }
 
 /// A release build checks the core; a source build only when pointed at a test release server.
 fn checks_core() -> bool {
-    option_env!("HERDR_APP_RELEASE").is_some() || std::env::var_os("HERDR_RELEASES_URL").is_some()
+    CUSTOM || option_env!("HERDR_APP_RELEASE").is_some() || std::env::var_os("HERDR_RELEASES_URL").is_some()
 }
 
 /// For the settings screen: both programs, what's waiting, when we last looked.
 pub fn status() -> serde_json::Value {
     serde_json::json!({
-        "app": { "version": env!("CARGO_PKG_VERSION"), "ready": ready(), "updates": checks_app().is_some() },
+        "app": { "version": VERSION, "ready": ready(), "updates": checks_app().is_some(),
+            "channel": if CUSTOM { "github-custom" } else { "official" }, "error": APP_ERROR.lock().unwrap().clone() },
         "notes": crate::update_notes::notes(ready().as_deref()),
         "core": core(),
         "checked": *CHECKED.lock().unwrap(),
@@ -170,12 +185,14 @@ pub fn start() {
             if let Some(root) = &app {
                 match check(root) {
                     Ok(found) => {
+                        *APP_ERROR.lock().unwrap() = None;
                         if found.is_some() {
                             *READY.lock().unwrap() = found;
                         }
                     }
                     Err(e) => {
                         tracing::warn!("update check: {e}");
+                        *APP_ERROR.lock().unwrap() = Some(e);
                         crate::telemetry::count("app_update_failed");
                         wait = RETRY;
                         succeeded = false;
@@ -266,7 +283,61 @@ pub fn update_core() {
 
 /// Downloads the latest release if it's newer. Ok(Some): a version is ready.
 fn check(root: &Path) -> Result<Option<String>, String> {
-    check_from(root, &releases())
+    if CUSTOM {
+        // /latest excludes preview releases. List both, and accept only this
+        // fork's custom tags with a complete updater archive and GitHub digest.
+        let text = curl_text(&format!("https://api.github.com/repos/{CUSTOM_REPO}/releases?per_page=100"))?;
+        let releases = serde_json::from_str(&text).map_err(|e| format!("GitHub releases: {e}"))?;
+        let Some(release) = custom_release(&releases, VERSION, &target())? else { return Ok(None) };
+        if !crate::update_notes::has(&release.version) {
+            crate::update_notes::cache(&release.notes);
+        }
+        stage(root, &release.version, &release.url, &release.sha)
+    } else {
+        check_from(root, &releases())
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct CustomRelease {
+    version: String,
+    url: String,
+    sha: String,
+    notes: String,
+}
+
+fn custom_version(version: &str) -> bool {
+    let parts: Vec<_> = version.split('.').collect();
+    parts.len() == 4 && parts.iter().all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()) && part.parse::<u64>().is_ok())
+}
+
+fn custom_release(feed: &serde_json::Value, running: &str, target: &str) -> Result<Option<CustomRelease>, String> {
+    let releases = feed.as_array().ok_or("GitHub releases: expected a release list")?;
+    let mut best: Option<CustomRelease> = None;
+    for release in releases {
+        if release["draft"].as_bool() != Some(false) { continue; }
+        let Some(tag) = release["tag_name"].as_str() else { continue };
+        let Some(version) = tag.strip_prefix("custom-v").filter(|v| custom_version(v)) else { continue };
+        if !newer(version, running) || best.as_ref().is_some_and(|best| !newer(version, &best.version)) { continue; }
+        let arch = match target {
+            "macos-aarch64" => "macos-arm64",
+            _ => continue,
+        };
+        let name = format!("Herdr-Custom-{version}-{arch}-update.tar.gz");
+        let url = format!("https://github.com/{CUSTOM_REPO}/releases/download/{tag}/{name}");
+        let Some(asset) = release["assets"].as_array().and_then(|assets| assets.iter().find(|asset| {
+            asset["name"].as_str() == Some(&name) && asset["browser_download_url"].as_str() == Some(&url)
+                && asset["state"].as_str() == Some("uploaded")
+        })) else { continue };
+        let sha = asset["digest"].as_str().and_then(|d| d.strip_prefix("sha256:"))
+            .filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+            .ok_or_else(|| format!("GitHub release {tag}: missing SHA-256 digest"))?;
+        // The normal What's new parser accepts dated sections with bullet items.
+        let date = release["published_at"].as_str().unwrap_or("").get(..10).unwrap_or("");
+        let body = release["body"].as_str().unwrap_or("");
+        best = Some(CustomRelease { version: version.into(), url, sha: sha.to_ascii_lowercase(), notes: format!("## [{version}] - {date}\n{body}\n") });
+    }
+    Ok(best)
 }
 
 fn check_from(root: &Path, releases: &str) -> Result<Option<String>, String> {
@@ -274,7 +345,7 @@ fn check_from(root: &Path, releases: &str) -> Result<Option<String>, String> {
     let text = curl_text(&format!("{releases}/{path}"))?;
     let manifest: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
     let version = manifest["version"].as_str().ok_or(format!("{path}: no version"))?;
-    if !newer(version, env!("CARGO_PKG_VERSION")) {
+    if !newer(version, VERSION) {
         return Ok(None);
     }
     // Notes are optional: a missing feed must never hold up the update.
@@ -283,14 +354,18 @@ fn check_from(root: &Path, releases: &str) -> Result<Option<String>, String> {
     {
         crate::update_notes::cache(&text);
     }
-    let staged = beside(root, ".new");
-    if staged_version(root).as_deref() == Some(version) {
-        return Ok(Some(version.to_owned()));
-    }
     let entry = &manifest["targets"][target()];
     let (Some(url), Some(sha)) = (entry["url"].as_str(), entry["sha256"].as_str()) else {
         return Ok(None);
     };
+    stage(root, version, url, sha)
+}
+
+fn stage(root: &Path, version: &str, url: &str, sha: &str) -> Result<Option<String>, String> {
+    let staged = beside(root, ".new");
+    if staged_version(root).as_deref() == Some(version) {
+        return Ok(Some(version.to_owned()));
+    }
     tracing::info!("downloading Herdr {version}");
     let work = beside(root, ".download");
     let _ = std::fs::remove_dir_all(&work);
@@ -328,6 +403,20 @@ fn unpack(url: &str, sha: &str, work: &Path) -> Result<PathBuf, String> {
 }
 
 fn prepare_macos_bundle(app: &Path, signature: &std::process::Output) -> Result<(), String> {
+    if CUSTOM {
+        // Custom bundles already carry a portable launcher. Preserve their
+        // plist and signature byte-for-byte, including ad-hoc signatures.
+        release_signature(signature.status.success(), &String::from_utf8_lossy(&signature.stderr))?;
+        run(Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict"]).arg(app))?;
+        let plist = app.join("Contents/Info.plist");
+        for (key, expected) in [("CFBundleIdentifier", "dev.herdr.custom.panedrag"), ("CFBundleExecutable", "LaunchHerdr")] {
+            let output = Command::new("/usr/libexec/PlistBuddy").args(["-c", &format!("Print :{key}")]).arg(&plist).output().map_err(|e| e.to_string())?;
+            if !output.status.success() || String::from_utf8_lossy(&output.stdout).trim() != expected {
+                return Err(format!("the download has an unexpected {key}"));
+            }
+        }
+        return Ok(());
+    }
     if release_signature(signature.status.success(), &String::from_utf8_lossy(&signature.stderr))? {
         run(Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict"]).arg(app))?;
     } else {
@@ -386,7 +475,7 @@ fn run(cmd: &mut Command) -> Result<(), String> {
 
 fn exe_in(app: &Path) -> PathBuf {
     if cfg!(target_os = "macos") {
-        app.join("Contents/MacOS/Herdr")
+        app.join(if CUSTOM { "Contents/MacOS/LaunchHerdr" } else { "Contents/MacOS/Herdr" })
     } else {
         app.join(format!("herdr-app{}", std::env::consts::EXE_SUFFIX))
     }
@@ -451,14 +540,14 @@ pub fn apply_on_startup() -> bool {
         // SAFETY: startup runs before any app threads. Do not leak the guard
         // into the core's environment and every terminal it later starts.
         unsafe { std::env::remove_var("HERDR_APP_UPDATE_EXPECTED") };
-        if expected != env!("CARGO_PKG_VERSION") {
-            tracing::warn!("update: relaunched as {}, expected {expected}; not retrying", env!("CARGO_PKG_VERSION"));
+        if expected != VERSION {
+            tracing::warn!("update: relaunched as {}, expected {expected}; not retrying", VERSION);
         }
         return false;
     }
     let Some(root) = checks_app() else { return false };
     let staged = staged_version(&root);
-    let Some(version) = startup_target(env!("CARGO_PKG_VERSION"), staged.as_deref(), expected.as_deref()) else { return false };
+    let Some(version) = startup_target(VERSION, staged.as_deref(), expected.as_deref()) else { return false };
     if !swap(&root) {
         return false;
     }
@@ -472,7 +561,7 @@ pub fn apply_on_startup() -> bool {
 pub fn apply() -> bool {
     let Some(root) = root() else { return false };
     let staged = staged_version(&root);
-    if ready().as_deref() != staged.as_deref() || !staged.as_deref().is_some_and(|version| newer(version, env!("CARGO_PKG_VERSION"))) {
+    if ready().as_deref() != staged.as_deref() || !staged.as_deref().is_some_and(|version| newer(version, VERSION)) {
         return false;
     }
     swap(&root)
@@ -534,7 +623,8 @@ fn relaunch_expected(expected: Option<&str>) -> bool {
     let Some(root) = root() else { return false };
     // LaunchServices need not preserve the startup guard or an isolated home.
     let open = if cfg!(target_os = "macos") {
-        if expected.is_some() { "exec \"$1/Contents/MacOS/Herdr\"" } else { "open \"$1\"" }
+        if CUSTOM { "exec \"$1/Contents/MacOS/LaunchHerdr\"" }
+        else if expected.is_some() { "exec \"$1/Contents/MacOS/Herdr\"" } else { "open \"$1\"" }
     } else {
         "exec \"$1/herdr-app\""
     };
@@ -579,6 +669,14 @@ pub fn after_update() {
     if std::fs::remove_file(marker()).is_err() {
         return;
     }
+    if CUSTOM {
+        // A fork app update must not implicitly upgrade/restart the shared core.
+        // Its update remains a separate, explicit action in Settings.
+        if let Some(root) = root() {
+            let _ = std::fs::remove_dir_all(beside(&root, ".old"));
+        }
+        return;
+    }
     std::thread::spawn(|| {
         let have = crate::core_bin::version(&crate::core_bin::path()).unwrap_or_default();
         CORE.lock().unwrap().updating = true;
@@ -607,6 +705,86 @@ pub fn after_update() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn github_release(version: &str) -> serde_json::Value {
+        let tag = format!("custom-v{version}");
+        let name = format!("Herdr-Custom-{version}-macos-arm64-update.tar.gz");
+        serde_json::json!({ "tag_name": tag, "draft": false, "prerelease": true,
+            "published_at": "2026-11-06T12:00:00Z", "body": "### New\n- App updates from GitHub.",
+            "assets": [{ "name": name, "state": "uploaded", "digest": format!("sha256:{}", "a".repeat(64)),
+                "browser_download_url": format!("https://github.com/{CUSTOM_REPO}/releases/download/{tag}/{name}") }] })
+    }
+
+    #[test]
+    fn custom_feed_accepts_previews_and_orders_numeric_builds() {
+        let feed = serde_json::json!([github_release("0.1.13.9"), github_release("0.1.13.12"), github_release("0.1.13.10")]);
+        let release = custom_release(&feed, "0.1.13.6", "macos-aarch64").unwrap().unwrap();
+        assert_eq!(release.version, "0.1.13.12");
+        assert_eq!(crate::update_notes::parse(&release.notes)[0].version, release.version);
+        assert_eq!(crate::update_notes::parse(&release.notes)[0].items.len(), 1);
+        assert!(custom_release(&feed, "0.1.13.12", "macos-aarch64").unwrap().is_none());
+        assert!(custom_release(&feed, "0.1.13.20", "macos-aarch64").unwrap().is_none());
+        assert!(custom_release(&feed, "0.1.13.6", "macos-x86_64").unwrap().is_none());
+    }
+
+    #[test]
+    fn custom_feed_ignores_official_drafts_and_incomplete_releases() {
+        let valid = github_release("0.1.13.7");
+        let mut official = github_release("0.1.13.99");
+        official["tag_name"] = "v9.0.0".into();
+        let mut draft = github_release("0.1.13.98");
+        draft["draft"] = true.into();
+        let mut dmg_only = github_release("0.1.13.97");
+        dmg_only["assets"][0]["name"] = "preview.dmg".into();
+        let mut pending = github_release("0.1.13.96");
+        pending["assets"][0]["state"] = "new".into();
+        let mut other_repo = github_release("0.1.13.95");
+        other_repo["assets"][0]["browser_download_url"] = "https://example.com/update.tar.gz".into();
+        let feed = serde_json::json!([official, draft, dmg_only, pending, other_repo, valid]);
+        assert_eq!(custom_release(&feed, "0.1.13.6", "macos-aarch64").unwrap().unwrap().version, "0.1.13.7");
+        for version in ["0.1.13", "0.1.13.7/../x", "0.1.13.7-beta", "0.1.13.-7", "0.1.13."] {
+            assert!(!custom_version(version));
+        }
+    }
+
+    #[test]
+    fn custom_feed_requires_github_sha256() {
+        for digest in [serde_json::Value::Null, "sha256:abc".into(), format!("sha256:{}", "z".repeat(64)).into()] {
+            let mut release = github_release("0.1.13.7");
+            release["assets"][0]["digest"] = digest;
+            assert!(custom_release(&serde_json::json!([release]), "0.1.13.6", "macos-aarch64").is_err());
+        }
+        assert!(custom_release(&serde_json::json!({ "message": "rate limit exceeded" }), "0.1.13.6", "macos-aarch64").is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "requires HERDR_CUSTOM_UPDATE_ARCHIVE and a matching custom build; no installed app is touched"]
+    fn custom_archive_stages_verified_bundle_and_rejects_damage_or_wrong_version() {
+        assert!(CUSTOM);
+        let archive = PathBuf::from(std::env::var_os("HERDR_CUSTOM_UPDATE_ARCHIVE").expect("path to packaged updater archive"));
+        let work = std::env::temp_dir().join(format!("herdr-custom-update-test-{}", std::process::id()));
+        let root = work.join(PACKED);
+        std::fs::create_dir_all(&work).unwrap();
+        let url = format!("file://{}", archive.display());
+        let sha = sha256(&std::fs::read(&archive).unwrap());
+        assert!(stage(&root, VERSION, &url, &"0".repeat(64)).unwrap_err().contains("checksum mismatch"));
+        assert!(!beside(&root, ".new").exists());
+        assert_eq!(stage(&root, VERSION, &url, &sha).unwrap().as_deref(), Some(VERSION));
+        assert_eq!(staged_version(&root).as_deref(), Some(VERSION));
+        let staged = beside(&root, ".new");
+        run(Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict"]).arg(&staged)).unwrap();
+        // A previously verified stage needs no second download.
+        assert_eq!(stage(&root, VERSION, "file:///missing", "bad").unwrap().as_deref(), Some(VERSION));
+        assert!(stage(&root, "0.1.13.99999", &url, &sha).unwrap_err().contains("doesn't run as"));
+        assert_eq!(staged_version(&root).as_deref(), Some(VERSION));
+        // Even a locally valid ad-hoc signature cannot change bundle identity.
+        run(Command::new("/usr/libexec/PlistBuddy").args(["-c", "Set :CFBundleIdentifier dev.wrong.app"]).arg(staged.join("Contents/Info.plist"))).unwrap();
+        run(Command::new("/usr/bin/codesign").args(["--force", "--deep", "--sign", "-"]).arg(&staged)).unwrap();
+        let signature = Command::new("/usr/bin/codesign").arg("-dvv").arg(&staged).output().unwrap();
+        assert!(prepare_macos_bundle(&staged, &signature).unwrap_err().contains("unexpected CFBundleIdentifier"));
+        std::fs::remove_dir_all(work).unwrap();
+    }
 
     #[test]
     fn failed_check_clears_success_and_recovery_records_a_new_time() {

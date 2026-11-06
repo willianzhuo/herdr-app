@@ -723,7 +723,7 @@ export default class Settings extends View {
       ? ["A build from source: it updates with git, not here.", null]
       : u.app.ready
         ? [`${u.app.ready} is ready. Restart to switch now; it also switches when you quit.`, primary("st-app-update", "Restart to update", () => run("app.update"))]
-        : [result, check("st-check-app")];
+        : [!u.checking && u.app.error ? `Update check failed: ${u.app.error}` : result, check("st-check-app")];
     const c = u.core;
     const core = c.managed
       ? [`Managed by ${c.managed}: update it there.`, null]
@@ -745,7 +745,9 @@ export default class Settings extends View {
       .child(div().h(18))
       .child(this.heading(t, "herdr-core"))
       .child(this.row(t, `herdr-core ${c.version ?? ""}`, core[0], core[1] ?? div()))
-      .child(div().pt(12).text_size(12.5).line_height("18px").text_color(t.dim).child("Herdr looks for both every hour and tells you in the corner. herdr-core runs your terminals, so they keep running through its updates."));
+      .child(div().pt(12).text_size(12.5).line_height("18px").text_color(t.dim).child(u.app.channel === "github-custom"
+        ? "Herdr Custom checks willianzhuo/herdr-app GitHub Releases at startup and every hour, including custom preview releases. Install into a writable Applications folder. Restart applies the app update and keeps your terminals running. herdr-core updates require a separate click."
+        : "Herdr looks for both every hour and tells you in the corner. herdr-core runs your terminals, so they keep running through its updates."));
   }
 
 

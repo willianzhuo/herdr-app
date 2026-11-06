@@ -34,6 +34,13 @@ fn embed(base: &Path, folder: &str, name: &str, file: &str) {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=HERDR_CUSTOM_VERSION");
+    if let Ok(version) = std::env::var("HERDR_CUSTOM_VERSION") {
+        let base = std::env::var("CARGO_PKG_VERSION").unwrap();
+        let build = version.strip_prefix(&format!("{base}."));
+        assert!(build.is_some_and(|b| !b.is_empty() && b.bytes().all(|c| c.is_ascii_digit()) && b.parse::<u64>().is_ok()), "HERDR_CUSTOM_VERSION must be {base}.<numeric build>");
+        assert_eq!(std::env::var("CARGO_CFG_TARGET_OS").as_deref(), Ok("macos"), "custom updater currently supports macOS only");
+    }
     let base = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     embed(&base, "defaults/mods", "DEFAULT_MODS", "default_mods.rs");
     embed(&base, "defaults/icons", "DEFAULT_ICONS", "default_icons.rs");

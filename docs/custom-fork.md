@@ -147,16 +147,49 @@ operations. The test terminal's address, process PID, and creation time remained
 unchanged across those operations.
 
 Install private builds as a separate **Herdr Custom.app** with an independent
-app home, rather than overwriting an official signed app. A private build does
-not receive official app updates automatically; merge upstream and rebuild.
+app home. Custom releases check this fork for updates; to incorporate official
+changes, merge upstream, verify, and publish a new custom release.
+
+## In-app updates from GitHub
+
+Starting with `custom-v0.1.13.7`, packaged macOS builds check the public GitHub
+Releases API ten seconds after launch and hourly. Settings → Updates → Check now
+can trigger a check at any time. The checker includes preview releases and
+selects the highest numeric `custom-v<upstream>.<build>` with a complete archive
+for the current architecture. Official `v*` releases, drafts, DMG-only releases,
+older versions and assets outside this fork's release URL are ignored.
+
+The updater verifies GitHub's asset SHA-256 digest, the bundle signature and
+identity, and the executable's full version before staging beside the installed
+app. A Restart to update action swaps the bundle and relaunches its portable
+launcher. Quit also applies a downloaded update; a verified pending update can
+be recovered on the next launch after a crash. App preferences remain outside
+the bundle, and custom app updates never implicitly update/restart herdr-core.
+Core updates remain available as a separate explicit action in Settings.
+
+Install the app into a writable Applications folder (for example
+`~/Applications`); updating directly on the mounted read-only DMG is unsupported.
+Network, API rate-limit and write-permission failures appear in Settings and can
+be retried. GitHub access is required, but recipients need no GitHub account or
+`gh` login for this public fork. These ad-hoc signed previews still require the
+usual first-install macOS trust decision; SHA-256 and local codesign verification
+do not replace Developer ID signing or notarization.
+
+Versions through `.6` have no fork updater: users install `.7` or later manually
+once. Local mod hot reload only watches local files; it does not distribute new
+GitHub releases. Native code updates use a downloaded app and restart.
 
 ## Sharing a macOS preview
 
 On an Apple Silicon Mac, run `./scripts/package-custom-macos`. It builds a release
-binary and writes a DMG plus SHA-256 checksum into `dist/`. Rust stable, Zig 0.16,
+binary and writes a DMG and updater `.tar.gz`, each with a SHA-256 checksum,
+into `dist/`. Rust stable, Zig 0.16,
 Python 3, and Apple's command line tools are required. For an already built binary,
 pass its path as the first argument and set `CUSTOM_BUILD_PROFILE` to its actual
 Cargo profile. `CUSTOM_BUILD_NUMBER` defaults to 1 and controls the package revision.
+The packager sets `HERDR_CUSTOM_VERSION=<Cargo version>.<build>` while compiling;
+an externally supplied binary must have been built with that exact value.
+`--version`, Settings, package metadata, and the GitHub tag must agree.
 
 The packager stages only the executable, icon, licenses, generic launcher, build
 metadata and installation guide. It never copies an installed app's preferences.
@@ -167,5 +200,10 @@ may block opening it. It has only been runtime-tested on macOS 26.6.2 arm64.
 
 Publish custom packages only to this fork, using tags such as
 `custom-v0.1.13.1`. Do not use `v*` tags: those trigger the upstream release
-workflow. Upload the DMG and checksum to a GitHub prerelease and include the
+workflow. Upload both archives and checksums to a draft first; publish only when
+all assets are uploaded and GitHub reports the updater archive's SHA-256 digest.
+Each updater archive must be named
+`Herdr-Custom-<version>.<build>-macos-arm64-update.tar.gz` and contain
+`Herdr Custom.app` at its root. Never replace a published build's assets: bump
+the build number. Include the
 architecture, core prerequisite, changes, and signing limitations in its notes.

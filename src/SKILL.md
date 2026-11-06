@@ -22,6 +22,11 @@ its terminals.
 
 `app.check_updates` checks for newer releases. Settings reports "Up to date"
 only after a successful check; on failure, check the connection and retry.
+Custom macOS releases from `0.1.13.7` check this fork's GitHub Releases (including
+`custom-v` previews), download and verify the update, then offer `app.update`
+to restart the app. They leave the shared core running; a core update is a
+separate action. Install the app into a writable Applications folder first.
+Older custom DMGs require one manual upgrade to acquire this updater.
 
 ## Show something when asked
 

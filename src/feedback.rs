@@ -20,7 +20,7 @@ pub fn draft(message: &str, email: &str, images: usize, from: &str, layout: &str
         "message": message.trim(),
         "email": if email.trim().is_empty() { None } else { Some(email.trim()) },
         "app": {
-            "version": env!("CARGO_PKG_VERSION"),
+            "version": crate::update::VERSION,
             "os": std::env::consts::OS,
             "arch": std::env::consts::ARCH,
             "channel": "stable",

@@ -690,6 +690,21 @@ What's about the user, never a look:
   version's notes, in the What's new window. Reading never clears the waiting-update dot.
   Rare spotlight releases open What’s new after restart, once; otherwise a
   quiet Updated pill lasts for that launch. A build from source never updates.
+  Custom macOS packages opt in at build time with `HERDR_CUSTOM_VERSION`
+  (`<upstream version>.<build>`, e.g. `0.1.13.7`). They check only
+  `willianzhuo/herdr-app` GitHub Releases for `custom-v` tags, including previews,
+  at startup and hourly; `app.check_updates` checks immediately. Their update
+  archive must match this Mac and GitHub's SHA-256 digest; app version, bundle
+  identity and code signature are checked before staging. Settings → Updates
+  shows the full custom version, source channel and download/check errors.
+  `updates().app.channel` is `github-custom` or `official`; `.error` is nullable.
+  Restart or a later quit applies a verified update. Custom app updates keep
+  preferences and do not automatically update/restart the shared core;
+  `app.update_core` remains an explicit separate action. Install into a writable
+  Applications directory first; an app still on the DMG cannot update in place.
+  Custom builds through `0.1.13.6` require one manual DMG upgrade to get this
+  updater. Mod hot reload watches local files only; remote release changes are
+  delivered by the app update and restart.
   Curated notes come from the bundled root `CHANGELOG.md`; remote notes and
   media are optional. `update-notes.json` records the last successful app
   version and presented spotlights; `update-notes-cache.md` caches remote

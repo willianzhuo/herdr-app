@@ -10,8 +10,9 @@ version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)
 build=${CUSTOM_BUILD_NUMBER:-1}
 [[ $build =~ ^[0-9]+$ ]] || { echo 'Build number must be numeric.' >&2; exit 1; }
 profile=${CUSTOM_BUILD_PROFILE:-release}
+custom_version="$version.$build"
 if [[ $# == 0 ]]; then
-  env -u HERDR_APP_RELEASE cargo build --locked --release
+  env -u HERDR_APP_RELEASE HERDR_CUSTOM_VERSION="$custom_version" cargo build --locked --release
   binary="${CARGO_TARGET_DIR:-$root/target}/release/herdr-app"
 else
   binary=$1
@@ -20,8 +21,8 @@ fi
 file "$binary" | grep -q 'Mach-O 64-bit executable arm64' || {
   echo 'Expected an arm64 executable.' >&2; exit 1;
 }
-[[ $("$binary" --version) == "herdr-app $version" ]] || {
-  echo 'Binary version does not match Cargo.toml.' >&2; exit 1;
+[[ $("$binary" --version) == "herdr-app $custom_version" ]] || {
+  echo "Binary must be built with HERDR_CUSTOM_VERSION=$custom_version." >&2; exit 1;
 }
 work=$(mktemp -d "${TMPDIR:-/tmp}/herdr-custom-package.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -44,7 +45,7 @@ plist = dict(
     CFBundleExecutable='LaunchHerdr', CFBundleIdentifier='dev.herdr.custom.panedrag',
     CFBundleName='Herdr Custom', CFBundleDisplayName='Herdr Custom',
     CFBundleIconFile='Herdr', CFBundlePackageType='APPL',
-    CFBundleShortVersionString=version, CFBundleVersion=build,
+    CFBundleShortVersionString=f'{version}.{build}', CFBundleVersion=build,
     LSMinimumSystemVersion='11.0', NSPrincipalClass='NSApplication',
     NSHighResolutionCapable=True,
     NSMicrophoneUsageDescription='Terminal programs running in Herdr can use the microphone, for example for voice input.',
@@ -56,7 +57,8 @@ with (contents / 'Info.plist').open('wb') as f:
 metadata = dict(
     repository='https://github.com/willianzhuo/herdr-app',
     commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
-    version=version, build=build, profile=profile, architecture='arm64',
+    version=version, build=build, update_version=f'{version}.{build}',
+    update_repository='willianzhuo/herdr-app', profile=profile, architecture='arm64',
     signing='ad-hoc; not notarized',
     minimum_core=pathlib.Path('distribution/core-version').read_text().strip(),
 )
@@ -101,8 +103,15 @@ machine list, sessions or keys are bundled. You can keep the official app.
 已有的 herdr-core 及其机器/终端状态可能由两个 App 共享。
 An existing herdr-core and its machine/terminal state may be shared by both apps.
 
-此版本不自动接收官方 App 更新；从 fork 获取后续版本。
-No automatic official app updates; obtain future builds from the fork.
+此版本会检查本 fork 的 GitHub Releases（含 custom-v 预览版）。
+启动后和每小时检查，也可在 Settings → Updates 点击 Check now。
+下载并校验完成后点击 Restart to update；配置和运行中的终端保留。
+App 更新不会自动重启/更新共享的 herdr-core，其更新需单独点击。
+请先复制到可写的 Applications 目录；DMG 内的 App 不能就地更新。
+Checks this fork's GitHub Releases at startup and hourly; Settings > Updates
+also offers Check now. Verified downloads offer Restart to update. Preferences
+and running terminals survive; core updates remain a separate manual action.
+Install into a writable Applications folder before using in-app updates.
 Source: https://github.com/willianzhuo/herdr-app
 Upstream: https://github.com/herdrdev/herdr-app
 License and third-party notices: inside the app's Contents/Resources.
@@ -113,4 +122,9 @@ out="$root/dist/$name.dmg"
 hdiutil create -volname 'Herdr Custom' -srcfolder "$work/source" -format UDZO "$out"
 hdiutil verify "$out"
 (cd "$root/dist" && shasum -a 256 "$name.dmg" > "$name.dmg.sha256")
+archive="$name-update.tar.gz"
+[[ ! -e "$root/dist/$archive" ]] || { echo "Refusing to overwrite: $archive" >&2; exit 1; }
+COPYFILE_DISABLE=1 tar -czf "$root/dist/$archive" -C "$work/source" 'Herdr Custom.app'
+(cd "$root/dist" && shasum -a 256 "$archive" > "$archive.sha256")
 echo "Packaged: $out"
+echo "Updater archive: $root/dist/$archive"

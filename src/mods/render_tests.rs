@@ -543,7 +543,19 @@ fn settings_sections_and_updates(cx: &mut TestAppContext) {
         }
         assert!(tree.contains(if checking { "Checking" } else if succeeded { "Up to date" } else { "Check your connection" }), "check status missing: {tree}");
     }
-    eprintln!("27 settings cases, each twice: {:?}", start.elapsed());
+    let mut p = props();
+    p["section"] = json!("updates");
+    let mut u = updates("current", "current");
+    u["app"]["channel"] = json!("github-custom");
+    u["app"]["version"] = json!("0.1.13.7");
+    u["app"]["error"] = json!("read-only install directory");
+    u["checked"] = serde_json::Value::Null;
+    u["checking"] = json!(false);
+    let tree = describe(cx, &staged, "frame/settings", true, p, u, None).unwrap();
+    for text in ["0.1.13.7", "GitHub Releases", "read-only install directory", "check-app", "separate click"] {
+        assert!(tree.contains(text), "missing custom updater detail {text}: {tree}");
+    }
+    eprintln!("settings cases: {:?}", start.elapsed());
 }
 
 #[gpui::test]

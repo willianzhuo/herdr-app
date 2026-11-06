@@ -288,7 +288,7 @@ export function fonts(): string[];
  *  `checks`: anything is checked at all (not in a build from source); `checking`: looking now
  *  (`app.check_updates` starts a look). */
 export function updates(): {
-  app: { version: string; ready: string | null; updates: boolean };
+  app: { version: string; ready: string | null; updates: boolean; channel: "official" | "github-custom"; error: string | null };
   notes: { version: string; date: string; items: { headline: string; detail: string; fixed: boolean; media: { path: string; width: number; height: number }[] }[]; spotlight: boolean }[];
   core: { version: string | null; managed: string | null; ready: string | null; updating: boolean; error: string | null };
   checked: number | null;
