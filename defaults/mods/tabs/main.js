@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
+import { spaces, panes, terminals, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -9,6 +9,18 @@ function find(node, id) {
     if (found) return found;
   }
   return null;
+}
+
+function tabTitle(tab, panel, all, record) {
+  const program = panel?.program;
+  const ownTitle = (record?.report?.title || panel?.title || "").trim()
+    .replace(/^[^\p{L}\p{N}~/]+/u, "");
+  // Explicit descriptive tab names stay fixed; old program-name tabs follow focus.
+  const generic = !tab.named || /^\d+$|^tb\d+$/.test(tab.name)
+    || all.some(p => p.tab === tab.id && [p.program?.name, p.program?.key].includes(tab.name));
+  return generic
+    ? ownTitle || record?.name || program?.name || panel?.title || "Terminal"
+    : tab.name;
 }
 
 export default class Tabs extends View {
@@ -45,16 +57,39 @@ export default class Tabs extends View {
     localStorage.setItem("panels", JSON.stringify(this.panels));
   }
 
+  // Remember focus per tab so an inactive tab retains its own panel's title.
+  titlePanels(all) {
+    this.titleFocus ??= JSON.parse(localStorage.getItem("title-focus") ?? "{}");
+    let changed = false;
+    for (const p of all) {
+      if (p.focused && this.titleFocus[p.tab] !== p.pane) {
+        this.titleFocus[p.tab] = p.pane; changed = true;
+      }
+    }
+    const ids = new Set(all.map(p => `${p.tab}\u0000${p.pane}`));
+    for (const [tab, pane] of Object.entries(this.titleFocus)) {
+      if (!ids.has(`${tab}\u0000${pane}`)) { delete this.titleFocus[tab]; changed = true; }
+    }
+    if (changed) localStorage.setItem("title-focus", JSON.stringify(this.titleFocus));
+    return tab => all.find(p => p.tab === tab && p.pane === this.titleFocus[tab])
+      ?? all.find(p => p.tab === tab);
+  }
+
   render() {
     const t = theme();
     const space = spaces().find(p => p.active);
     const shown = space?.tabs ?? [];
+    const allPanes = panes();
+    const titlePanel = this.titlePanels(allPanes);
+    const records = new Map(terminals().map(t => [t.address, t]));
     const stop = (_e, cx) => cx.stop_propagation();
     const button = (id, label, action) => div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", stop).on_click(action).child(label);
     const item = (c, i) => {
-      const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
-      const name = /^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name;
+      const panel = titlePanel(c.id);
+      const program = panel?.program;
+      const record = records.get(panel?.terminal);
+      const name = tabTitle(c, panel, allPanes, record);
       return h_flex().id(`tab-${c.id}`)
         .on_mouse_move((e, cx) => {
           if (shared("pane.dragging")) run("pane.drag.target", { tab:c.id, ...e.bounds });
@@ -70,7 +105,7 @@ export default class Tabs extends View {
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
         .when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).text_color(t.muted) : image(program.icon).size(14)))
-        .child(div().flex_1().min_w(0).max_w(220).truncate().child(c.zoomed ? `${name} Z` : name))
+        .child(div().flex_1().min_w(0).max_w(220).truncate().tooltip(name).child(c.zoomed ? `${name} Z` : name))
         .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
         .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status])))
         .when(c.active, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(12))));

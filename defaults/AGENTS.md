@@ -154,6 +154,11 @@ the highlighted line shows where it will land.
   `working`, `blocked`, `idle`, or `done` = finished while the user wasn't
   looking (it becomes `idle` once they look). A space's and a tab's
   status is the most urgent of its agents: blocked > done > working > idle.
+- The custom agent list names each agent from its own reported title or terminal
+  title, falling back to its terminal name/program. It never borrows another
+  pane's title or its tab's name. Tabs follow their last focused panel's title;
+  descriptive manually named tabs stay fixed. Numeric and program-name tabs
+  follow focus. The tab-bar mod remembers each tab's title focus locally.
 - **Sub-agents** are terminals an agent started with `hc run`: the core
   records the starter as `parent` (see `terminals()`). They belong to their
   parent's tab without a pane; the `agents` mod shows them,

@@ -49,28 +49,13 @@ test("already shared pins need no write and pending writes survive restart", () 
   expect(restarted.writes).toHaveLength(1);
 });
 
-test("an unnamed tab's row reads its terminal's title, not the tab number", () => {
-  const title = new Function("View", "localStorage", "props", "run", `${source}; return title;`)(class {}, {}, () => ({}), () => {});
-  const claude = { program: { name: "claude", key: "claude" }, title: "Herdr session names" };
-  expect(title({ name: "3", named: false }, claude)).toBe("Herdr session names");
-  expect(title({ name: "claude", named: true }, claude)).toBe("Herdr session names");
-  expect(title({ name: "fix login", named: true }, claude)).toBe("fix login");
-  expect(title({ name: "3", named: false }, { ...claude, title: "claude" })).toBe("3");
-});
-
-test("tab labels prefer the first agent, then focused terminal, then first terminal", () => {
-  const leadPanes = new Function("View", `${source}; return leadPanes;`)(class {});
-  const pane = (tab: string, terminal: string, agent = false, focused = false) => ({ tab, terminal, program: { agent }, focused });
-  const all = [
-    { tab: "agent", focused: true }, // A mod pane has no terminal.
-    pane("agent", "shell", false, true), pane("agent", "first-agent", true), pane("agent", "second-agent", true, true),
-    pane("focused", "first-shell"), pane("focused", "focused-shell", false, true),
-    pane("first", "first"), pane("first", "second"),
-  ];
-  const leads = leadPanes(all);
-  expect([...leads].map(([tab, p]: any) => [tab, p.terminal])).toEqual([
-    ["agent", "first-agent"], ["focused", "focused-shell"], ["first", "first"],
-  ]);
+test("agent names come from their own session, never a tab label", () => {
+  const title = new Function("View", `${source}; return agentTitle;`)(class {});
+  const agent = { address: "200/t2", title: "Own terminal title", program: { name: "Codex" } };
+  expect(title(agent, { title: "Own panel title" }, { report: { title: "Own session" } })).toBe("Own session");
+  expect(title(agent, { title: "Own panel title" }, {})).toBe("Own panel title");
+  expect(title(agent, null, {})).toBe("Own terminal title");
+  expect(title({ ...agent, title: "" }, null, {})).toBe("Codex");
 });
 
 // Lightweight element descriptions: execute conditional builders and retain text,
@@ -96,7 +81,7 @@ function textOf(node: any): string {
 
 for (const sort of ["priority", "grouped"]) test(`${sort} render reads panes once and refreshes labels on the next render`, () => {
   const list = Array.from({ length: 64 }, (_, i) => ({
-    address: `t${i}`, pane: `p${i}`, tab: `tab${i}`, space: "s1", space_name: "Project",
+    address: `t${i}`, pane: `p${i}`, tab: "same-tab", space: "s1", space_name: "Project",
     program: { name: "Claude", key: "claude", agent: true }, title: "Fallback", status: "idle", seq: i,
   }));
   const snapshot = list.map((a, i) => ({ tab: a.tab, terminal: a.address, program: a.program, title: `Task ${i}` }));

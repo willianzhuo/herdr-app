@@ -11,6 +11,27 @@ move; the terminal backend is unchanged.
   into another tab; detaching it into another single-pane tab is a no-op.
 - Tabs have a minimum width of 160 px.
 
+## Focus and session titles
+
+The agent list resolves every row by its own full terminal address, including
+its machine prefix. It prefers that terminal's reported title, then its panel
+or terminal title, terminal name and program name. Sibling panels and tab names
+never supply an agent's label. Priority/pinned rows show the space as context.
+
+The tab bar uses the last focused panel in each tab, remembers that choice in
+its local storage, and follows the panel's reported/terminal title and icon.
+Closing or moving the panel falls back to a remaining panel. Explicit descriptive
+tab names stay fixed; numeric and program-name tabs follow focus. A newly installed
+mod initially uses a tab's first panel until it observes focus in that tab.
+
+To apply these mod changes to an older running custom app, copy
+`defaults/mods/agents/main.js` into a personal `mods/agents-titles/` mod and point
+the sidebar layout at it. Update an existing directory-routing tab bar from
+`personal-config/tabs-copy-main.js`, keeping its companion directory helper and
+machine map. These changes can hot reload without restarting terminals.
+Session titles remain dependent on what each agent actually reports; the separate
+Traex lifecycle/session adapter is not included in this naming change.
+
 ## Branches and remotes
 
 Keep `master` as the upstream baseline and `custom` as the maintained custom
