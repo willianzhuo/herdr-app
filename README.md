@@ -1,3 +1,6 @@
+> **Custom fork:** pane dragging between tabs, detach-to-tab, and wider tab targets.
+> Maintained on `custom`; `master` tracks upstream. See [custom build and sync instructions](docs/custom-fork.md).
+
 # Herdr
 
 Herdr is a desktop app for terminals and coding agents. Keep work in spaces, see which agents need you, and leave terminals running when you close the window.

@@ -2,3 +2,6 @@
 /dist
 /.brain
 /AGENTS.local.md
+
+# Local build report contains machine-specific paths.
+/BUILD-NOTES.txt

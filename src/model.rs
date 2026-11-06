@@ -328,6 +328,54 @@ impl Model {
         true
     }
 
+    /// Move an existing pane between tabs in the same workspace. The pane id,
+    /// terminal address and view survive; no terminal is closed or restarted.
+    /// A missing target creates `new_tab`; validation precedes all mutations.
+    pub fn relocate_pane(&mut self, source: &str, target: Option<&str>, new_tab: &str, edge: crate::layout::Edge) -> bool {
+        let Some(space) = self.space_of(source) else { return false };
+        let space_id = space.id.clone();
+        let Some(source_tab) = self.tab_of(source) else { return false };
+        let source_id = source_tab.id.clone();
+        if target.is_none() && source_tab.root.panes().len() == 1 { return false; }
+        if let Some(target) = target {
+            if self.space_of(target).map(|s| &s.id) != Some(&space_id) { return false; }
+            if self.tab_of(target).map(|t| &t.id) == Some(&source_id) {
+                return self.move_pane(source, target, Some(edge));
+            }
+        } else if self.tab(new_tab).is_some() { return false; }
+        let mut source_root = source_tab.root.clone();
+        let Some(mut node) = source_root.remove(source).filter(Node::is_pane) else { return false };
+        node.size = None;
+        let destination = if let Some(target) = target {
+            let Some(tab) = self.tab_of(target) else { return false };
+            let id = tab.id.clone();
+            let mut root = tab.root.clone();
+            let axis = if matches!(edge, crate::layout::Edge::Left | crate::layout::Edge::Right) { Axis::Row } else { Axis::Column };
+            let machine = self.space(&space_id).and_then(|s| s.machine.clone());
+            let split = self.fresh_id_on("s", machine.as_deref());
+            if !root.split(target, axis, node, split) { return false; }
+            if matches!(edge, crate::layout::Edge::Left | crate::layout::Edge::Top) { root.swap(source, target); }
+            self.tab_mut(&id).unwrap().root = root;
+            self.tab_mut(&id).unwrap().zoomed = None;
+            id
+        } else {
+            self.add_tab(&space_id, Tab::with_pane(new_tab, "", node));
+            new_tab.to_owned()
+        };
+        self.tab_mut(&source_id).unwrap().root = source_root;
+        // Remove stale source focus, or its now-empty tab, without killing terminals.
+        if self.tab(&source_id).is_some_and(|t| t.root.panes().is_empty()) {
+            self.remove_tab(&source_id);
+        } else if let Some(tab) = self.tab_mut(&source_id) {
+            tab.before.retain(|id| id != source);
+            if tab.focused.as_deref() == Some(source) { tab.focused = tab.root.panes().first().map(|n| n.id.clone()); }
+            if tab.zoomed.as_deref() == Some(source) { tab.zoomed = None; }
+        }
+        self.select_tab(&destination);
+        self.focus_pane(source);
+        true
+    }
+
     /// Removes a pane. Returns what else closed: the tab, and the space if it was its last.
     pub fn remove_pane(&mut self, pane_id: &str) -> (bool, bool) {
         let Some(c) = self.tab_of_mut(pane_id) else { return (false, false) };
@@ -887,4 +935,30 @@ mod tests {
         assert_eq!(m.focused_pane().as_deref(), Some("x1"));
         assert_eq!(m.active_tab().map(|c| addresses(c.shown())).unwrap_or_default(), ["t1"]);
     }
+    #[test]
+    fn relocating_preserves_identity_and_removes_only_empty_source_tabs() {
+        use crate::layout::Edge;
+        let mut m = model_with_one();
+        m.split("x1", Axis::Row, "x2", "t2");
+        assert!(m.relocate_pane("x2", None, "c2", Edge::Right));
+        assert_eq!(m.pane_of("t2").as_deref(), Some("x2"));
+        assert_eq!(m.tab_of("x2").unwrap().id, "c2");
+        assert!(m.relocate_pane("x2", Some("x1"), "unused", Edge::Left));
+        assert!(m.tab("c2").is_none());
+        assert_eq!(m.tab_of("x2").unwrap().id, "c1");
+        assert_eq!(m.tabs().flat_map(|t| t.root.terminals()).count(), 2);
+    }
+
+    #[test]
+    fn relocating_rejects_invalid_targets_and_other_workspaces_atomically() {
+        use crate::layout::Edge;
+        let mut m = model_with_one();
+        m.add_space("p2", "other", "/", Tab::new("c2", "", "x2", "t2"));
+        assert!(!m.relocate_pane("x1", Some("missing"), "c3", Edge::Right));
+        assert!(!m.relocate_pane("x1", Some("x2"), "c3", Edge::Right));
+        assert!(!m.relocate_pane("x1", None, "c3", Edge::Right));
+        assert_eq!(m.pane_of("t1").as_deref(), Some("x1"));
+        assert_eq!(m.tab_of("x1").unwrap().id, "c1");
+    }
+
 }

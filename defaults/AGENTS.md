@@ -244,7 +244,7 @@ Properties any node can have:
   tab tree and then the layout's tab block and its ancestors. Root `"movable": false`
   opts the layout out. Composition terminal blocks aren't tab panes and never drag.
   Center drop swaps panes; an edge drop places beside it. Escape or dropping outside
-  another pane cancels. Zoomed tabs and one-pane tabs don't drag. The grip appears
+  another pane cancels. Zoomed tabs do not drag. A one-pane tab can move into another tab. The grip appears
   on top-edge hover, regardless of the header's position or presence. Only the grip
   starts dragging; header mods don't need drag handlers. `panes()` exposes `movable`.
 - `floating`: blocks over this node (below).
@@ -1027,3 +1027,21 @@ including a small herdr-core skill you can install with the user's permission.
 - One mod per idea. Don't edit `AGENTS.md` or the `.d.ts` files (the app
   rewrites them). Don't touch other mods unless the request
   needs it.
+
+
+## Private build: cross-tab pane dragging
+
+Drag a terminal pane's top-center grip to another tab. Hover for 400 ms to
+select that tab, then drop onto a pane edge to split left/right/top/bottom.
+Dropping directly on a different tab adds a right split. Drop onto the blank
+area at the end of the tab strip to detach a split into a new tab. Escape or
+dropping outside a target cancels. Single-pane tabs can move into another tab;
+turning their only pane into a new tab is a no-op. Moves stay in one workspace
+and preserve the terminal process and pane identity.
+
+Custom tab bars opt in by calling `pane.drag.target {tab?, x, y, width, height}`
+from `on_mouse_move`, using `event.bounds`. A missing tab marks the empty strip
+as a new-tab target. Stop propagation on tab items. Gate these calls on
+`shared("pane.dragging")`, which is null outside an app-owned pane gesture.
+The app owns the release, drop preview, async label update and model mutation.
+Do not implement this by closing a pane or restarting its program.

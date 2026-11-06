@@ -143,3 +143,21 @@ Never experiment with pointer/key automation on the person's real display.
 When developing the app on Linux, its `scripts/sandbox` provides an isolated
 home, core and display: `up`, `do`, `status`, `shot`, then `down` when done.
 Never stop a server or session you didn't start.
+
+
+## Private build: cross-tab pane dragging
+
+Drag a terminal pane's top-center grip to another tab. Hover for 400 ms to
+select that tab, then drop onto a pane edge to split left/right/top/bottom.
+Dropping directly on a different tab adds a right split. Drop onto the blank
+area at the end of the tab strip to detach a split into a new tab. Escape or
+dropping outside a target cancels. Single-pane tabs can move into another tab;
+turning their only pane into a new tab is a no-op. Moves stay in one workspace
+and preserve the terminal process and pane identity.
+
+Custom tab bars opt in by calling `pane.drag.target {tab?, x, y, width, height}`
+from `on_mouse_move`, using `event.bounds`. A missing tab marks the empty strip
+as a new-tab target. Stop propagation on tab items. Gate these calls on
+`shared("pane.dragging")`, which is null outside an app-owned pane gesture.
+The app owns the release, drop preview, async label update and model mutation.
+Do not implement this by closing a pane or restarting its program.

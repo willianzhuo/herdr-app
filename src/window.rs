@@ -268,6 +268,7 @@ struct Term {
 enum TerminalChange {
     Keep { space: String, tab: String, pane: String, name: String, target: Option<String>, axis: Axis },
     Park,
+    Move { space: String, tab: String, pane: String, target: Option<String>, edge: crate::layout::Edge },
 }
 
 struct PendingTerminalChange {
@@ -463,6 +464,7 @@ impl AppWindow {
     pub fn new(core: Arc<Core>, requests: async_channel::Receiver<Request>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let runtime = ShellRuntime::new(cx).map_err(|e| tracing::error!("script runtime failed, mods are off: {e:#}")).ok();
         mods::note_fonts(cx);
+        mods::set_shared("pane.dragging".into(), Value::Null);
         let seen = std::fs::read_to_string(file("seen.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
         let mut w = AppWindow {
             core,
@@ -2575,8 +2577,9 @@ impl AppWindow {
 
     fn start_terminal_change(&mut self, address: String, change: TerminalChange, window: &mut Window, cx: &mut Context<Self>) {
         let machine = address.split_once('/').map(|(m, _)| m);
+        let moving = matches!(&change, TerminalChange::Move { .. });
         let (keep, labels) = match &change {
-            TerminalChange::Keep { space, tab, .. } => (true, json!({
+            TerminalChange::Keep { space, tab, .. } | TerminalChange::Move { space, tab, .. } => (true, json!({
                 "herdr.space":crate::mirror::local(space, machine), "herdr.tab":crate::mirror::local(tab, machine),
             })),
             TerminalChange::Park => (false, json!({"herdr.space":"","herdr.tab":""})),
@@ -2590,7 +2593,7 @@ impl AppWindow {
         let job = cx.background_executor().spawn(async move {
             let result = (|| {
                 core.call("terminal.label", json!({"terminal":addr,"labels":labels}))?;
-                core.call("terminal.keep", json!({"terminal":addr,"keep":keep}))?;
+                if !moving { core.call("terminal.keep", json!({"terminal":addr,"keep":keep}))?; }
                 anyhow::Ok(())
             })().map_err(|e| format!("{e:#}"));
             let _ = tx.send(result);
@@ -2632,6 +2635,27 @@ impl AppWindow {
                     }
                 }
                 if let Some(pane) = self.model.pane_of(&address) { self.model.focus_pane(&pane); }
+            }
+            TerminalChange::Move { space: _, tab, pane, target, edge } => {
+                if !self.model.relocate_pane(&pane, target.as_deref(), &tab, edge) {
+                    // A destination may close while its machine is replying. Keep the
+                    // original pane and repair its labels rather than losing the session.
+                    if let Some(space) = self.model.space_of(&pane)
+                        && let Some(tab) = self.model.tab_of(&pane)
+                    {
+                        let machine = space.machine.as_deref();
+                        let labels = json!({"herdr.space":crate::mirror::local(&space.id, machine),
+                            "herdr.tab":crate::mirror::local(&tab.id, machine)});
+                        let core = self.core.clone();
+                        let address = address.clone();
+                        cx.background_executor().spawn(async move {
+                            if let Err(error) = core.call("terminal.label", json!({"terminal":address,"labels":labels})) {
+                                tracing::error!("could not restore pane labels: {error:#}");
+                            }
+                        }).detach();
+                    }
+                    self.layout_notice("Pane was not moved", "The source or destination changed. The original terminal was kept.", window, cx);
+                }
             }
             TerminalChange::Park => {
                 if let Some(pane) = self.model.pane_of(&address) { self.model.remove_pane(&pane); }
@@ -2991,6 +3015,9 @@ impl AppWindow {
                 {
                     c.zoomed = if c.zoomed.as_deref() == Some(pane.as_str()) { None } else { Some(pane) };
                 }
+            }
+            "pane.drag.target" => {
+                self.register_pane_drop_target(a, window, cx);
             }
             "pane.focus" => {
                 if Self::arg(a, "pane").is_none()

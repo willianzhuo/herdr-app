@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo 'Commit or stash your changes before syncing upstream.' >&2
+  exit 1
+fi
+branch=$(git symbolic-ref --quiet --short HEAD) || { echo 'Switch to your custom branch first.' >&2; exit 1; }
+if [[ "$branch" == master || "$branch" == main ]]; then
+  echo 'Switch to the custom branch before syncing.' >&2
+  exit 1
+fi
+if ! git remote get-url upstream >/dev/null 2>&1; then
+  echo 'Missing upstream remote. Add https://github.com/herdrdev/herdr-app.git as upstream.' >&2
+  exit 1
+fi
+git fetch upstream master
+git merge --no-edit refs/remotes/upstream/master
+git submodule update --init --recursive --depth 1
+echo 'Upstream merged. Run checks and rebuild before pushing your custom branch.'
