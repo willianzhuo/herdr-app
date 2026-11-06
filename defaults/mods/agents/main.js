@@ -3,7 +3,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { agents, terminals, panes, focused, spaces, knownAgents, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -34,7 +34,32 @@ function agentTitle(agent, pane, terminal) {
     || terminal?.name || agent.program?.name || agent.address;
   return agent.program?.key === "traex" ? title.replace(/^Action Required\s*\|\s*/i, "") : title;
 }
-const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
+// Presence and status are separate: dashboards can clear OSC status while the
+// foreground agent keeps running. Keep it visible without inventing idle/done.
+function includeUnreportedAgents(reported, all, panels, workspaces, knownKeys) {
+  const result = [...reported];
+  const seen = new Set(result.map(a => a.address));
+  const live = new Map(all.filter(t => t.state === "live").map(t => [t.address, t]));
+  const tabs = new Map(workspaces.flatMap(s => s.tabs.map((tab, i) => [tab.id, { space:s, tab, index:i + 1 }])));
+  for (const p of panels) {
+    if (!p.terminal || seen.has(p.terminal)) continue;
+    const t = live.get(p.terminal), context = tabs.get(p.tab);
+    const program = t?.program ?? p.program;
+    if (!t || !context || !knownKeys.has(program?.key)) continue;
+    seen.add(p.terminal);
+    result.push({
+      address:p.terminal, pane:p.pane, tab:p.tab,
+      space:context.space.id, space_name:context.space.name,
+      tab_index:context.index, tab_name:context.tab.name,
+      title:p.title || t.title || "", program,
+      app:p.app ?? program.key, status:"unknown", seq:0,
+      pinned:Boolean(t.labels?.["herdr.pinned"]), focused:Boolean(p.focused),
+    });
+  }
+  return result;
+}
+
+const RANK = { unknown: 0, blocked: 4, done: 3, working: 2, idle: 1 };
 // A sub-agent without a pane isn't in agents(): its raw word, error counting as
 // blocked. It's never done: it reports to its parent, and the parent's done is the news.
 const kidStatus = (k, listed) => {
@@ -46,7 +71,7 @@ const SORTS = [
   { id: "grouped", label: "Grouped by space", icon: "layers" },
 ];
 const sortOf = () => SORTS.find((s) => s.id === shared("agents.sort")) ?? SORTS[0];
-const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
+const SECTION = { 0: "Status unknown", 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
 const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
 
 function duration(ms) {
@@ -67,6 +92,14 @@ export default class Agents extends View {
   init(_props, cx) {
     if (props()?.sortMenu) return;
     this.folded = new Set();
+    this.agentKeys = new Set();
+    cx.spawn(async cx => {
+      // The table includes remote agents even when not installed on this Mac.
+      // Installation flags are irrelevant to identifying an existing process.
+      const entries = await knownAgents();
+      this.agentKeys = new Set(entries.map(p => p.key));
+      cx.notify();
+    });
     // Each agent's last state and when it changed (ms), kept across restarts.
     this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}");
     this.pendingPins = JSON.parse(localStorage.getItem("pins") ?? "[]");
@@ -201,6 +234,8 @@ export default class Agents extends View {
   // compact: a ! for blocked where a header already says "Needs you".
   status(t, a, compact = false) {
     const color = t[a.status] ?? t.dim;
+    if (a.status === "unknown") return div().flex_none().text_size(11).text_color(t.dim)
+      .tooltip("Agent is running but has no current status report").child("?");
     if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
     if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
     if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
@@ -214,9 +249,10 @@ export default class Agents extends View {
     if (props()?.sortMenu) return this.sortMenu(t);
     const collapsed = narrow();
     const sort = sortOf();
-    let list = agents();
-    this.listed = new Map(list.map((a) => [a.address, a.status]));
     const all = terminals();
+    const panelSnapshot = panes();
+    let list = includeUnreportedAgents(agents(), all, panelSnapshot, spaces(), this.agentKeys);
+    this.listed = new Map(list.map((a) => [a.address, a.status]));
     this.migratePins(all);
     const shown = focused()?.agent;
     const now = Date.now();
@@ -268,7 +304,7 @@ export default class Agents extends View {
         .when(!open, (el) => el.child(String(subs.length)));
     };
 
-    const ownPanes = new Map(panes().filter(p => p.terminal).map(p => [p.terminal, p]));
+    const ownPanes = new Map(panelSnapshot.filter(p => p.terminal).map(p => [p.terminal, p]));
     const ownTerminals = new Map(all.map(t => [t.address, t]));
     const label = a => agentTitle(a, ownPanes.get(a.address), ownTerminals.get(a.address));
 
@@ -350,7 +386,7 @@ export default class Agents extends View {
     // space are next to each other in agents(), so neighbours make a group.
     const groups = pinned.length ? [{ id: "pinned", label: "Pinned", status: null, members: pinned }] : [];
     for (const a of rest) {
-      const r = rankOf(a) || RANK.idle;
+      const r = rankOf(a) ?? RANK.unknown;
       const id = byPriority ? `sec-${r}` : `sp-${a.space}`;
       if (groups.at(-1)?.id === id) groups.at(-1).members.push(a);
       else groups.push({ id, label: byPriority ? SECTION[r] : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });

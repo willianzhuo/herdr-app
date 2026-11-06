@@ -8,13 +8,15 @@ function harness(pins: string[], globals: Record<string, unknown> = {}) {
   const data = new Map([["pins", JSON.stringify(pins)]]);
   const writes: unknown[] = [];
   const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => data.set(k, v), removeItem: (k: string) => data.delete(k) };
+  const tasks: Promise<unknown>[] = [];
+  globals = { knownAgents: async () => [], spaces: () => [], ...globals };
   const Agents = new Function("View", "localStorage", "props", "run", ...Object.keys(globals), `${source}; return Agents;`)(
     class {}, storage, () => ({}), (...args: unknown[]) => writes.push(args),
     ...Object.values(globals),
   );
   const agents = new Agents();
-  agents.init({}, { timer: { every() {} } });
-  return { agents, data, writes };
+  agents.init({}, { timer: { every() {} }, spawn(fn: any) { tasks.push(fn({ notify() {} })); } });
+  return { agents, data, writes, tasks };
 }
 
 test("legacy pins migrate once listed, retaining offline pins until their labels arrive", () => {
@@ -59,6 +61,35 @@ test("agent names come from their own session, never a tab label", () => {
   expect(title({ ...agent, title: "[ ! ] Action Required | Own session", program: { key: "traex" } }, null, {})).toBe("Own session");
 });
 
+test("clearing an agent report preserves presence and a new session report replaces the fallback", () => {
+  const include = new Function("View", `${source}; return includeUnreportedAgents;`)(class {});
+  const program = { key: "claude", name: "Claude Code", agent: false };
+  const terminal = { address: "remote/t1", state: "live", program, reported: true, status: null, labels: {} };
+  const panel = { pane: "p1", terminal: terminal.address, tab: "tab", title: "Session one", program };
+  const spaces = [{ id: "space", name: "Project", tabs: [{ id: "tab", name: "1" }] }];
+  const keys = new Set(["claude"]);
+  let rows = include([], [terminal], [panel], spaces, keys);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ address: "remote/t1", pane: "p1", status: "unknown", title: "Session one" });
+  const resumed = { ...rows[0], status: "working", title: "Session two" };
+  rows = include([resumed], [terminal], [panel], spaces, keys);
+  expect(rows).toEqual([resumed]);
+  expect(include([], [{ ...terminal, state: "finished" }], [panel], spaces, keys)).toEqual([]);
+  // Historical reported=true must not turn the shell or editor into the old agent.
+  for (const key of ["shell", "nvim"]) {
+    expect(include([], [{ ...terminal, program: { key } }], [panel], spaces, keys)).toEqual([]);
+  }
+});
+
+test("unreported agents use full remote addresses and deduplicate repeated panes", () => {
+  const include = new Function("View", `${source}; return includeUnreportedAgents;`)(class {});
+  const program = { key: "traex" };
+  const all = ["t1", "remote/t1"].map(address => ({ address, state: "live", program, labels: {} }));
+  const panels = all.map((t, i) => ({ pane: `p${i}`, terminal: t.address, tab: "tab", title: t.address }));
+  const workspaces = [{ id: "space", name: "Project", tabs: [{ id: "tab" }] }];
+  expect(include([], all, [...panels, panels[0]], workspaces, new Set(["traex"])).map((a: any) => a.address)).toEqual(["t1", "remote/t1"]);
+});
+
 // Lightweight element descriptions: execute conditional builders and retain text,
 // without running input callbacks or pretending to exercise native GPUI layout.
 function element() {
@@ -79,6 +110,27 @@ function element() {
 function textOf(node: any): string {
   return typeof node === "string" ? node : (node?.children ?? []).map(textOf).join(" ");
 }
+
+for (const sort of ["priority", "grouped"]) test(`${sort}: unreported running Claude remains visible without being labelled idle or done`, async () => {
+  const program = { key: "claude", name: "Claude Code", agent: false };
+  const panel = { pane: "p1", terminal: "remote/t1", tab: "tab1", title: "Resumed session", program };
+  const { agents, tasks } = harness([], {
+    knownAgents: async () => [{ ...program, installed: false }],
+    agents: () => [], terminals: () => [{ address: panel.terminal, state: "live", program, status: null, labels: {} }],
+    panes: () => [panel], focused: () => null,
+    spaces: () => [{ id: "s1", name: "Project", tabs: [{ id: "tab1", name: "1" }] }],
+    layout: () => ({ id: "sidebar", size: { px: 268 } }), shared: () => sort,
+    theme: () => ({}), setAgentOrder: () => {},
+    div: element, v_flex: element, h_flex: element, svg: element, image: element,
+  });
+  await Promise.all(tasks);
+  const text = textOf(agents.render({}).node);
+  expect(text).toContain("Resumed session");
+  expect(text).toContain("?");
+  if (sort === "priority") expect(text).toContain("Status unknown");
+  expect(text).not.toContain("Idle");
+  expect(text).not.toContain("Done");
+});
 
 for (const sort of ["priority", "grouped"]) test(`${sort} render reads panes once and refreshes labels on the next render`, () => {
   const list = Array.from({ length: 64 }, (_, i) => ({

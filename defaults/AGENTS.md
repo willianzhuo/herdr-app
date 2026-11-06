@@ -159,6 +159,13 @@ the highlighted line shows where it will land.
   pane's title or its tab's name. Tabs follow their last focused panel's title;
   descriptive manually named tabs stay fixed. Numeric and program-name tabs
   follow focus. The tab-bar mod remembers each tab's title focus locally.
+- The custom sidebar also keeps recognized running agents visible when their
+  current status report is absent (for example after a Claude dashboard/session
+  switch). These rows show a gray `?` / Status unknown, never an inferred idle,
+  working or done state. A fresh report replaces the fallback without duplicating
+  the row; exiting the agent or returning to a shell removes it. This is sidebar
+  presence only: `agents()` and agent status/notification rollups still describe
+  actual reports. Use the pane row to focus an unreported terminal.
 - **Sub-agents** are terminals an agent started with `hc run`: the core
   records the starter as `parent` (see `terminals()`). They belong to their
   parent's tab without a pane; the `agents` mod shows them,

@@ -86,6 +86,26 @@ This leaves the app, core and terminals running. Reopening returns to a normal
 window; fullscreen can be entered again. To load an installed app update, use
 Cmd+Q and reopen: the red button only hides the running version.
 
+## Agent presence when reports are cleared
+
+The custom sidebar separates a running agent's presence from its current status.
+A Claude dashboard/session switch can leave core with `reported: true` but a null
+current status while the foreground Claude process remains alive. The sidebar
+now supplements reporting agents with live, pane-owned processes recognized by
+the `knownAgents()` program table, even if that program is not installed locally.
+
+Such rows show **Status unknown** / a gray question mark, retain their own title,
+can be focused by clicking, and are replaced by real reported states without
+duplication. Full remote terminal addresses prevent cross-machine collisions.
+Returning to a shell/editor or ending the process removes the fallback. The
+presence fallback does not generate busy/done states, notifications or core data;
+agent API/cycle navigation and rollups continue to use actual status reports.
+
+Regression coverage includes report → cleared report → resumed session,
+finished processes, shell/editor transitions, duplicate panels, remote addresses,
+and both priority/grouped rendering. This mod can hot reload without restarting
+any running Claude or Traex session.
+
 ## Branches and remotes
 
 Keep `master` as the upstream baseline and `custom` as the maintained custom
