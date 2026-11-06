@@ -709,6 +709,9 @@ impl Platform for MacPlatform {
     }
 
     fn hide(&self) {
+        if MacWindow::defer_app_hide_until_fullscreen_exit() {
+            return;
+        }
         unsafe {
             let app = NSApplication::sharedApplication(nil);
             let _: () = msg_send![app, hide: nil];

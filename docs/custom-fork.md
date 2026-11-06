@@ -72,6 +72,19 @@ macOS backend's 21 unit tests pass. A real display unplug/reconfiguration race
 has not been forced on the user's desktop. This patch concerns the app window,
 not the independently running core or terminal processes.
 
+## Hiding from native fullscreen on macOS
+
+The macOS red close button still hides the app so background agent notifications
+continue. When the active managed window is in native fullscreen, hiding first
+requests one fullscreen exit, waits for AppKit's did-exit delegate, then hides
+asynchronously without holding the window state lock. Repeated requests coalesce;
+a hide during an already-running exit waits instead of toggling fullscreen back.
+A failed native exit clears the pending request so another click can retry.
+
+This leaves the app, core and terminals running. Reopening returns to a normal
+window; fullscreen can be entered again. To load an installed app update, use
+Cmd+Q and reopen: the red button only hides the running version.
+
 ## Branches and remotes
 
 Keep `master` as the upstream baseline and `custom` as the maintained custom

@@ -788,6 +788,11 @@ reporting was verified with Traex 0.214.1 and core 0.1.18 (working, done, idle,
 and blocked for permission). The 0.213.1 control session did not report status;
 existing older sessions are not restarted or modified automatically.
 
+On macOS the red window button hides Herdr, including from native fullscreen
+(after its exit animation completes). The app and its notifications keep running;
+Cmd+Q quits the app and is needed before reopening to use an installed update.
+Core terminals are independent of both hiding and quitting the app.
+
 ## Mods: `mods/<name>/`
 
 ```

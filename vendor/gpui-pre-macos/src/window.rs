@@ -705,6 +705,8 @@ struct MacWindowState {
     app_owns_titlebar_drag: bool,
     fullscreen_restore_bounds: Bounds<Pixels>,
     is_exiting_fullscreen: bool,
+    // HERDR: hiding a native fullscreen window must wait for its Space to exit.
+    hide_after_fullscreen_exit: bool,
     simple_fullscreen_state: Option<SimpleFullscreenState>,
     move_tab_to_new_window_callback: Option<Box<dyn FnMut()>>,
     merge_all_windows_callback: Option<Box<dyn FnMut()>>,
@@ -1142,6 +1144,7 @@ impl MacWindow {
                 app_owns_titlebar_drag,
                 fullscreen_restore_bounds: Bounds::default(),
                 is_exiting_fullscreen: false,
+                hide_after_fullscreen_exit: false,
                 simple_fullscreen_state: None,
                 move_tab_to_new_window_callback: None,
                 merge_all_windows_callback: None,
@@ -1312,6 +1315,31 @@ impl MacWindow {
             pool.drain();
 
             window
+        }
+    }
+
+    pub(crate) fn defer_app_hide_until_fullscreen_exit() -> bool {
+        unsafe {
+            let app = NSApplication::sharedApplication(nil);
+            let window: id = msg_send![app, mainWindow];
+            if window.is_null() || !is_gpui_window(window) {
+                return false;
+            }
+            let state = get_window_state(&*window);
+            let mut lock = state.lock();
+            let fullscreen = lock.is_fullscreen();
+            let exiting = lock.is_exiting_fullscreen;
+            let plan = app_hide_plan(&mut lock.hide_after_fullscreen_exit, fullscreen, exiting);
+            // toggleFullScreen: may synchronously call delegates that lock this state.
+            drop(lock);
+            match plan {
+                AppHidePlan::Now => false,
+                AppHidePlan::WaitForExit => true,
+                AppHidePlan::ExitFullscreen => {
+                    window.toggleFullScreen_(nil);
+                    true
+                }
+            }
         }
     }
 
@@ -3059,6 +3087,7 @@ extern "C" fn window_did_fail_to_exit_fullscreen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
     lock.is_exiting_fullscreen = false;
+    lock.hide_after_fullscreen_exit = false;
     lock.restore_traffic_light();
 }
 
@@ -3072,6 +3101,16 @@ extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: id) {
     // Keep using the native windowed frames when restoring them on the next entry.
     lock.traffic_light_frames = lock.pre_fullscreen_traffic_light_frames.take();
     lock.move_traffic_light();
+    let hide = std::mem::take(&mut lock.hide_after_fullscreen_exit);
+    drop(lock);
+    if hide {
+        // Finish AppKit's fullscreen delegate before hiding; hiding also emits
+        // visibility callbacks and must not happen with window state locked.
+        DispatchQueue::main().exec_async(|| unsafe {
+            let app = NSApplication::sharedApplication(nil);
+            let _: () = msg_send![app, hide: nil];
+        });
+    }
 }
 
 pub(crate) fn is_macos_version_at_least(version: NSOperatingSystemVersion) -> bool {
@@ -3802,6 +3841,22 @@ where
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum AppHidePlan {
+    Now,
+    ExitFullscreen,
+    WaitForExit,
+}
+
+fn app_hide_plan(pending: &mut bool, fullscreen: bool, exiting: bool) -> AppHidePlan {
+    if !fullscreen && !exiting {
+        return AppHidePlan::Now;
+    }
+    let request_exit = !*pending && !exiting;
+    *pending = true;
+    if request_exit { AppHidePlan::ExitFullscreen } else { AppHidePlan::WaitForExit }
+}
+
 fn visible_screen_size(screen: id) -> Option<Size<Pixels>> {
     if screen.is_null() {
         return None;
@@ -3987,5 +4042,25 @@ mod tests {
         // Reproduce the nil NSScreen in the 2026-11-06 is_maximized crash.
         // In debug builds calling visibleFrame directly would abort the process.
         assert_eq!(visible_screen_size(nil), None);
+    }
+
+    #[test]
+    fn fullscreen_hide_requests_one_exit_and_coalesces_repeated_clicks() {
+        let mut pending = false;
+        assert_eq!(app_hide_plan(&mut pending, false, false), AppHidePlan::Now);
+        assert!(!pending);
+        assert_eq!(app_hide_plan(&mut pending, true, false), AppHidePlan::ExitFullscreen);
+        assert_eq!(app_hide_plan(&mut pending, true, false), AppHidePlan::WaitForExit);
+        assert_eq!(app_hide_plan(&mut pending, true, true), AppHidePlan::WaitForExit);
+        assert!(std::mem::take(&mut pending));
+        assert!(!std::mem::take(&mut pending));
+        assert_eq!(app_hide_plan(&mut pending, false, false), AppHidePlan::Now);
+    }
+
+    #[test]
+    fn hide_during_existing_fullscreen_exit_waits_without_toggling_back() {
+        let mut pending = false;
+        assert_eq!(app_hide_plan(&mut pending, false, true), AppHidePlan::WaitForExit);
+        assert!(pending);
     }
 }
