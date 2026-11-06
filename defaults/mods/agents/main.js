@@ -56,7 +56,11 @@ function includeUnreportedAgents(reported, all, panels, workspaces, knownKeys) {
       pinned:Boolean(t.labels?.["herdr.pinned"]), focused:Boolean(p.focused),
     });
   }
-  return result;
+  // Native rows and presence-only rows must share model/pane order. Grouped
+  // rendering relies on a workspace's members being adjacent, not appended later.
+  const order = new Map();
+  panels.forEach((p, i) => { if (p.terminal && !order.has(p.terminal)) order.set(p.terminal, i); });
+  return result.sort((a, b) => (order.get(a.address) ?? Infinity) - (order.get(b.address) ?? Infinity));
 }
 
 const RANK = { unknown: 0, blocked: 4, done: 3, working: 2, idle: 1 };
@@ -385,11 +389,16 @@ export default class Agents extends View {
     // Groups in list order: spaces (grouped) or priority sections. Agents of a
     // space are next to each other in agents(), so neighbours make a group.
     const groups = pinned.length ? [{ id: "pinned", label: "Pinned", status: null, members: pinned }] : [];
+    const byGroup = new Map();
     for (const a of rest) {
       const r = rankOf(a) ?? RANK.unknown;
       const id = byPriority ? `sec-${r}` : `sp-${a.space}`;
-      if (groups.at(-1)?.id === id) groups.at(-1).members.push(a);
-      else groups.push({ id, label: byPriority ? SECTION[r] : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
+      if (byGroup.has(id)) byGroup.get(id).members.push(a);
+      else {
+        const group = { id, label: byPriority ? SECTION[r] : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] };
+        byGroup.set(id, group);
+        groups.push(group);
+      }
     }
 
     // A group's header; it folds the group. Folded, it says how many and the most urgent state.

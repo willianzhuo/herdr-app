@@ -90,6 +90,26 @@ test("unreported agents use full remote addresses and deduplicate repeated panes
   expect(include([], all, [...panels, panels[0]], workspaces, new Set(["traex"])).map((a: any) => a.address)).toEqual(["t1", "remote/t1"]);
 });
 
+test("reported and unreported agents merge in pane order so a workspace remains contiguous", () => {
+  const include = new Function("View", `${source}; return includeUnreportedAgents;`)(class {});
+  const program = { key: "claude" };
+  const panels = [
+    { pane: "a1", terminal: "remote/t1", tab: "a" },
+    { pane: "a2", terminal: "remote/t2", tab: "a" },
+    { pane: "b1", terminal: "remote/t3", tab: "b" },
+  ].map(p => ({ ...p, program }));
+  const all = panels.map(p => ({ address: p.terminal, state: "live", program }));
+  const spaces = [{ id: "A", name: "Project A", tabs: [{ id: "a" }] }, { id: "B", name: "Project B", tabs: [{ id: "b" }] }];
+  const reported = [
+    { address: "remote/t1", space: "A", tab: "a", status: "idle" },
+    { address: "remote/t3", space: "B", tab: "b", status: "idle" },
+  ];
+  const rows = include(reported, all, panels, spaces, new Set(["claude"]));
+  expect(rows.map((a: any) => a.address)).toEqual(["remote/t1", "remote/t2", "remote/t3"]);
+  expect(rows.map((a: any) => a.space)).toEqual(["A", "A", "B"]);
+  expect(reported.map(a => a.address)).toEqual(["remote/t1", "remote/t3"]);
+});
+
 // Lightweight element descriptions: execute conditional builders and retain text,
 // without running input callbacks or pretending to exercise native GPUI layout.
 function element() {
@@ -110,6 +130,35 @@ function element() {
 function textOf(node: any): string {
   return typeof node === "string" ? node : (node?.children ?? []).map(textOf).join(" ");
 }
+
+test("grouped rendering gives one workspace header for mixed reported and unreported sessions", async () => {
+  const program = { key: "claude", name: "Claude Code" };
+  const panels = [
+    { pane: "a1", terminal: "remote/t1", tab: "a", title: "First session" },
+    { pane: "a2", terminal: "remote/t2", tab: "a", title: "Unreported session" },
+    { pane: "b1", terminal: "remote/t3", tab: "b", title: "Other workspace" },
+  ].map(p => ({ ...p, program }));
+  const workspaces = [{ id: "A", name: "Project A", tabs: [{ id: "a" }] }, { id: "B", name: "Project B", tabs: [{ id: "b" }] }];
+  const { agents, tasks } = harness([], {
+    knownAgents: async () => [{ key: "claude" }],
+    agents: () => [
+      { address: "remote/t1", pane: "a1", tab: "a", space: "A", space_name: "Project A", status: "idle", program },
+      { address: "remote/t3", pane: "b1", tab: "b", space: "B", space_name: "Project B", status: "idle", program },
+    ],
+    terminals: () => panels.map(p => ({ address: p.terminal, state: "live", program })),
+    panes: () => panels, spaces: () => workspaces, focused: () => null,
+    layout: () => ({ id: "sidebar", size: { px: 268 } }), shared: () => "grouped",
+    theme: () => ({}), setAgentOrder: () => {},
+    div: element, v_flex: element, h_flex: element, svg: element, image: element,
+  });
+  await Promise.all(tasks);
+  const ids: string[] = [];
+  const walk = (node: any) => { if (node?.id) ids.push(node.id); (node?.children ?? []).forEach(walk); };
+  walk(agents.render({}).node);
+  expect(ids.filter(id => id === "sp-A")).toHaveLength(1);
+  expect(ids.filter(id => id === "sp-B")).toHaveLength(1);
+  expect(ids.filter(id => id.startsWith("ag-remote/"))).toEqual(["ag-remote/t1", "ag-remote/t2", "ag-remote/t3"]);
+});
 
 for (const sort of ["priority", "grouped"]) test(`${sort}: unreported running Claude remains visible without being labelled idle or done`, async () => {
   const program = { key: "claude", name: "Claude Code", agent: false };

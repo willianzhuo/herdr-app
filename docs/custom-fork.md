@@ -103,7 +103,9 @@ agent API/cycle navigation and rollups continue to use actual status reports.
 
 Regression coverage includes report → cleared report → resumed session,
 finished processes, shell/editor transitions, duplicate panels, remote addresses,
-and both priority/grouped rendering. This mod can hot reload without restarting
+both priority/grouped rendering, and one workspace header when reported and
+unreported sessions are mixed. Rows merge in pane order and groups are keyed by
+workspace identity rather than by adjacency. This mod can hot reload without restarting
 any running Claude or Traex session.
 
 ## Branches and remotes
