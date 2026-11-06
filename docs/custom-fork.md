@@ -52,3 +52,23 @@ unchanged across those operations.
 Install private builds as a separate **Herdr Custom.app** with an independent
 app home, rather than overwriting an official signed app. A private build does
 not receive official app updates automatically; merge upstream and rebuild.
+
+## Sharing a macOS preview
+
+On an Apple Silicon Mac, run `./scripts/package-custom-macos`. It builds a release
+binary and writes a DMG plus SHA-256 checksum into `dist/`. Rust stable, Zig 0.16,
+Python 3, and Apple's command line tools are required. For an already built binary,
+pass its path as the first argument and set `CUSTOM_BUILD_PROFILE` to its actual
+Cargo profile. `CUSTOM_BUILD_NUMBER` defaults to 1 and controls the package revision.
+
+The packager stages only the executable, icon, licenses, generic launcher, build
+metadata and installation guide. It never copies an installed app's preferences.
+The recipient uses their own `~/.config/herdr-custom`; herdr-core must be installed
+separately (minimum 0.1.11, tested with 0.1.18). Existing core state can be shared
+with the official app. This preview is ad-hoc signed, not Apple notarized; macOS
+may block opening it. It has only been runtime-tested on macOS 26.6.2 arm64.
+
+Publish custom packages only to this fork, using tags such as
+`custom-v0.1.13.1`. Do not use `v*` tags: those trigger the upstream release
+workflow. Upload the DMG and checksum to a GitHub prerelease and include the
+architecture, core prerequisite, changes, and signing limitations in its notes.

@@ -1,0 +1,111 @@
+#!/bin/bash
+# Ad-hoc signed preview, independent of official release credentials.
+set -euo pipefail
+[[ $(uname -s) == Darwin && $(uname -m) == arm64 ]] || {
+  echo 'Requires an Apple Silicon Mac.' >&2; exit 1;
+}
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root"
+version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)
+build=${CUSTOM_BUILD_NUMBER:-1}
+[[ $build =~ ^[0-9]+$ ]] || { echo 'Build number must be numeric.' >&2; exit 1; }
+profile=${CUSTOM_BUILD_PROFILE:-release}
+if [[ $# == 0 ]]; then
+  env -u HERDR_APP_RELEASE cargo build --locked --release
+  binary="${CARGO_TARGET_DIR:-$root/target}/release/herdr-app"
+else
+  binary=$1
+fi
+[[ -f $binary ]] || { echo "Missing binary: $binary" >&2; exit 1; }
+file "$binary" | grep -q 'Mach-O 64-bit executable arm64' || {
+  echo 'Expected an arm64 executable.' >&2; exit 1;
+}
+[[ $("$binary" --version) == "herdr-app $version" ]] || {
+  echo 'Binary version does not match Cargo.toml.' >&2; exit 1;
+}
+work=$(mktemp -d "${TMPDIR:-/tmp}/herdr-custom-package.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+app="$work/source/Herdr Custom.app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$root/dist"
+cp "$binary" "$app/Contents/MacOS/HerdrCustom"
+strip -S "$app/Contents/MacOS/HerdrCustom"
+cp assets/icons/Herdr.icns LICENSE THIRD-PARTY-NOTICES "$app/Contents/Resources/"
+cat > "$app/Contents/MacOS/LaunchHerdr" <<'LAUNCH'
+#!/bin/sh
+export HERDR_APP_HOME="${HERDR_APP_HOME:-$HOME/.config/herdr-custom}"
+exec "$(dirname "$0")/HerdrCustom" "$@"
+LAUNCH
+chmod 755 "$app/Contents/MacOS/"*
+python3 - "$app" "$version" "$build" "$profile" <<'PY'
+import json, pathlib, plistlib, subprocess, sys
+app, version, build, profile = sys.argv[1:]
+contents = pathlib.Path(app) / 'Contents'
+plist = dict(
+    CFBundleExecutable='LaunchHerdr', CFBundleIdentifier='dev.herdr.custom.panedrag',
+    CFBundleName='Herdr Custom', CFBundleDisplayName='Herdr Custom',
+    CFBundleIconFile='Herdr', CFBundlePackageType='APPL',
+    CFBundleShortVersionString=version, CFBundleVersion=build,
+    LSMinimumSystemVersion='11.0', NSPrincipalClass='NSApplication',
+    NSHighResolutionCapable=True,
+    NSMicrophoneUsageDescription='Terminal programs running in Herdr can use the microphone, for example for voice input.',
+    NSCameraUsageDescription='Terminal programs running in Herdr can use the camera.',
+    NSAppleEventsUsageDescription='Terminal programs running in Herdr can use AppleScript to control other apps.',
+)
+with (contents / 'Info.plist').open('wb') as f:
+    plistlib.dump(plist, f)
+metadata = dict(
+    repository='https://github.com/willianzhuo/herdr-app',
+    commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+    version=version, build=build, profile=profile, architecture='arm64',
+    signing='ad-hoc; not notarized',
+    minimum_core=pathlib.Path('distribution/core-version').read_text().strip(),
+)
+(contents / 'Resources' / 'custom-build.json').write_text(json.dumps(metadata, indent=2) + '\n')
+PY
+codesign --force --deep --sign - "$app"
+codesign --verify --deep --strict "$app"
+ln -s /Applications "$work/source/Applications"
+cat > "$work/source/README.txt" <<'README'
+Herdr Custom — Apple Silicon preview / 定制预览版
+
+安装：将 Herdr Custom.app 拖到 Applications，然后从 Applications 打开。
+Install: drag Herdr Custom.app to Applications, then open the installed app.
+
+功能：加宽 Tab；拖动终端面板顶部中央的把手到另一 Tab，或拖到 Tab
+栏右侧空白处创建新 Tab。运行中的终端进程会保留，仅支持同一工作区。
+Features: wider tabs; drag a pane's top-center grip onto another tab to merge,
+or onto the tab-strip blank area to detach. Moves preserve the running terminal
+and work within one workspace.
+
+仅支持 Apple Silicon。herdr-core 需要单独安装（最低 0.1.11，已测试
+0.1.18），首次打开可按提示安装。
+Apple Silicon only. Install herdr-core separately (minimum 0.1.11; tested with
+0.1.18). The first-run screen offers installation.
+
+这是第三方 fork 的预览包，使用 ad-hoc 签名，尚未经过 Apple 公证。
+macOS 可能阻止首次打开。仅在确认来源可信后，在系统设置 → 隐私与安全性
+查看系统提供的“仍要打开”选项；组织管理的电脑可能限制运行。
+This third-party preview is ad-hoc signed, not Apple notarized. macOS may block
+it. For a trusted download, review the system's Open Anyway option in System
+Settings > Privacy & Security. Managed computers may prohibit running it.
+
+独立配置目录：~/.config/herdr-custom（使用接收者自己的用户目录）。
+安装包不包含作者的 SSH 配置、机器列表、会话或密钥。原版 App 可以保留。
+App preferences use your own ~/.config/herdr-custom. No author's SSH settings,
+machine list, sessions or keys are bundled. You can keep the official app.
+已有的 herdr-core 及其机器/终端状态可能由两个 App 共享。
+An existing herdr-core and its machine/terminal state may be shared by both apps.
+
+此版本不自动接收官方 App 更新；从 fork 获取后续版本。
+No automatic official app updates; obtain future builds from the fork.
+Source: https://github.com/willianzhuo/herdr-app
+Upstream: https://github.com/herdrdev/herdr-app
+License and third-party notices: inside the app's Contents/Resources.
+README
+name="Herdr-Custom-${version}.${build}-macos-arm64"
+out="$root/dist/$name.dmg"
+[[ ! -e $out ]] || { echo "Refusing to overwrite: $out" >&2; exit 1; }
+hdiutil create -volname 'Herdr Custom' -srcfolder "$work/source" -format UDZO "$out"
+hdiutil verify "$out"
+(cd "$root/dist" && shasum -a 256 "$name.dmg" > "$name.dmg.sha256")
+echo "Packaged: $out"

@@ -238,6 +238,18 @@ Show only this pane of its tab, or all again.
 |---|---|
 | `pane` | no |
 
+## `pane.drag.target`
+
+Register the hovered tab-bar drop target during a pane drag (no tab means a new tab).
+
+| Argument | Required |
+|---|---|
+| `tab` | no |
+| `x` | yes |
+| `y` | yes |
+| `width` | yes |
+| `height` | yes |
+
 ## `pane.focus`
 
 Focus a pane (or the pane showing a terminal).
