@@ -27,6 +27,13 @@ function tabTitle(tab, panel, all, record) {
     : tab.name;
 }
 
+// Appearance belongs to mods; Settings writes this persisted shared preference.
+function tabWidth() {
+  const width = shared("tabs.width");
+  return typeof width === "number" && Number.isFinite(width) && width > 0
+    ? Math.max(160, Math.min(400, Math.round(width))) : 220;
+}
+
 export default class Tabs extends View {
   init(_props, cx) {
     cx.spawn(async (cx) => {
@@ -97,6 +104,7 @@ export default class Tabs extends View {
     const allPanes = panes();
     const titlePanel = this.titlePanels(allPanes);
     const records = new Map(terminals().map(t => [t.address, t]));
+    const width = tabWidth();
     const stop = (_e, cx) => cx.stop_propagation();
     const button = (id, label, action) => div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", stop).on_click(action).child(label);
@@ -109,7 +117,7 @@ export default class Tabs extends View {
         .on_mouse_move((e, cx) => {
           if (shared("pane.dragging")) run("pane.drag.target", { tab:c.id, ...e.bounds });
           cx.stop_propagation();
-        }).h(32).w(220).min_w(220).max_w(220).px(14).gap(9).rounded(7).items_center().flex_none().text_size(12.8)
+        }).h(32).w(width).min_w(width).max_w(width).px(14).gap(9).rounded(7).items_center().flex_none().text_size(12.8)
         .border(1).border_color(c.active ? t.border : t.chrome).bg(c.active ? t.raised : t.chrome).text_color(c.active ? t.foreground : t.muted)
         .hover(s => s.bg(t.hover))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
