@@ -3,7 +3,9 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, knownAgents, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { agents, terminals, panes, focused, spaces, knownAgents, exec, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+
+import { SessionTitles, sessionTitle, SESSION_KEY } from "./session-titles.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -30,6 +32,8 @@ const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
 
 // Resolve each agent by its own terminal address, never by its containing tab.
 function agentTitle(agent, pane, terminal) {
+  const session = sessionTitle(terminal, shared(SESSION_KEY));
+  if (session) return session;
   const title = clean(terminal?.report?.title) || clean(pane?.title) || clean(agent.title)
     || terminal?.name || agent.program?.name || agent.address;
   return agent.program?.key === "traex" ? title.replace(/^Action Required\s*\|\s*/i, "") : title;
@@ -95,6 +99,8 @@ function icon(p, size, color) {
 export default class Agents extends View {
   init(_props, cx) {
     if (props()?.sortMenu) return;
+    this.sessions = new SessionTitles({ exec, terminals, shared, setShared });
+    cx.timer.every(5000, cx => { this.sessions.refresh(cx); cx.notify(); });
     this.folded = new Set();
     this.agentKeys = new Set();
     cx.spawn(async cx => {
@@ -249,6 +255,7 @@ export default class Agents extends View {
   }
 
   render(cx) {
+    this.sessions?.refresh(cx);
     const t = theme();
     if (props()?.sortMenu) return this.sortMenu(t);
     const collapsed = narrow();

@@ -159,6 +159,20 @@ the highlighted line shows where it will land.
   pane's title or its tab's name. Tabs follow their last focused panel's title;
   descriptive manually named tabs stay fixed. Numeric and program-name tabs
   follow focus. The tab-bar mod remembers each tab's title focus locally.
+  Tabs use a fixed 220px logical width, with reserved icon/status/close slots;
+  long titles truncate and show in full on hover. Panel focus and changing
+  titles never resize a tab.
+  For Traex, the custom sidebar, focused tab and panel headers prefer the
+  process's actual session name over its often-generic terminal title (`work`).
+  Sandboxed copies of `session-titles.js` batch read-only Python 3 probes per
+  machine every five seconds, match the foreground process's open rollout or
+  writer-lock file to a session ID, and read the CLI's SQLite/index metadata.
+  `traex.session-titles` caches display names by full terminal address plus
+  foreground PID and terminal creation time; entries expire after 20 seconds.
+  No matching saved name, unavailable Python/permissions or ambiguous session
+  ownership falls back to the existing title. Cwd or newest-session guesses
+  are forbidden. This display-only lookup never changes core status, sends
+  process input, edits Traex settings or restarts agents.
 - The custom sidebar also keeps recognized running agents visible when their
   current status report is absent (for example after a Claude dashboard/session
   switch). These rows show a gray `?` / Status unknown, never an inferred idle,

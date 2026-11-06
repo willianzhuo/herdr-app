@@ -9,7 +9,9 @@ move; the terminal backend is unchanged.
   tab and then drop on a pane edge to choose the split direction.
 - Escape or dropping outside a destination cancels. A tab's only pane can merge
   into another tab; detaching it into another single-pane tab is a no-op.
-- Tabs have a minimum width of 160 px.
+- Tabs have a fixed width of 220 logical px, with reserved icon, status and close
+  slots. Focus/title/status changes do not resize tabs. Long titles truncate and
+  remain available in a tooltip.
 
 ## Focus and session titles
 
@@ -28,8 +30,30 @@ To apply these mod changes to an older running custom app, copy
 `defaults/mods/agents/main.js` into a personal `mods/agents-titles/` mod and point
 the sidebar layout at it. Update an existing directory-routing tab bar from
 `personal-config/tabs-copy-main.js`, keeping its companion directory helper and
-machine map. These changes can hot reload without restarting terminals.
-Session titles remain dependent on what each agent actually reports.
+`session-titles.js` plus the machine map. These changes can hot reload without restarting terminals.
+Other agents continue to use their own reported/terminal titles.
+
+Traex additionally resolves its real saved session name, which its OSC terminal
+title may omit (for example, every session reports `work`). A read-only Python 3
+probe runs on the terminal's own machine, identifies the foreground process's
+currently open rollout or session writer lock, and looks up that exact ID in the
+CLI's SQLite/index metadata. The sidebar, focused tab and pane headers share the
+result. Two agents in the same cwd retain different names; resume launch arguments
+and the most recently modified workspace session are never used as identity.
+
+Probes batch by machine, coalesce across the sidebar/tab bar and refresh every
+five seconds. Results are tied to the full terminal address, foreground PID and
+terminal creation time, expire after 20 seconds, and are ignored after process
+exit/replacement. Ambiguous open sessions, unsaved sessions without a stored name,
+missing Python 3 or unavailable files keep the normal terminal-title fallback.
+There are no status writes, settings changes, database migrations or process input.
+Linux `/proc` probing was verified against separate live 200 sessions. The macOS
+path uses `ps`/`lsof`; a live local Traex session has not been tested.
+
+Each mod's sandbox requires a local helper copy. Treat
+`defaults/mods/agents/session-titles.js` as canonical and copy it unchanged into
+`tabs`, `pane`, `terminals-pane` and `personal-config` when editing. The tests
+enforce identical copies. No new native mod API is required.
 
 The Codex agent uses the current official ChatGPT icon at the fork owner's
 request. Its unchanged source asset is recorded in `defaults/icons/SOURCE-ChatGPT.txt`.
@@ -138,7 +162,8 @@ cargo build --locked --release
 ```
 
 `personal-config/tabs-copy-main.js` is an optional custom tab-bar example that
-preserves machine-directory routing. Place its companion `personal-config/directory.js` beside it in the
+preserves machine-directory routing. Place its companions `personal-config/directory.js`
+and `personal-config/session-titles.js` beside it in the
 local tab-bar mod folder. Copy the example machine-directory map into the app
 home as `machine-directories.json` and adjust it for your own machines. The built-in `tabs` mod already supports the new drag targets.
 

@@ -2,8 +2,9 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { panes, props, run, home } from "herdr";
+import { panes, terminals, shared, props, run, home } from "herdr";
 
+import { sessionTitle, SESSION_KEY } from "./session-titles.js";
 
 function folder(cwd) {
   if (!cwd) return "";
@@ -38,7 +39,7 @@ export default class TerminalsPane extends View {
     const g = p.program;
     const where = folder(p.cwd);
     // Shells often put the folder in their title already.
-    const title = p.title || "shell";
+    const title = sessionTitle(terminals().find(t => t.address === p.terminal), shared(SESSION_KEY)) || p.title || "shell";
     const dir = where && !title.includes(where) && !/^[~/]/.test(title) ? where : "";
     return h_flex()
       .id(`tm-head-${pane}`)
@@ -52,7 +53,7 @@ export default class TerminalsPane extends View {
       .when(Boolean(g?.icon), (el) =>
         el.child(g.tint ? svg(g.icon).size(16).flex_none().text_color("#d6d8db") : image(g.icon).w(15).h(15).flex_none()),
       )
-      .child(div().flex_none().max_w(320).truncate().font_semibold().text_color(p.focused ? "#e8e9eb" : "#a9adb3").child(title))
+      .child(div().flex_none().max_w(320).truncate().font_semibold().text_color(p.focused ? "#e8e9eb" : "#a9adb3").tooltip(title).child(title))
       .child(div().flex_1().truncate().text_color("#8b8f95").child(dir))
       .child(this.button(`th-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
       .child(this.button(`th-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))

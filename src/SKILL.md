@@ -27,6 +27,10 @@ Custom macOS releases from `0.1.13.7` check this fork's GitHub Releases (includi
 to restart the app. They leave the shared core running; a core update is a
 separate action. Install the app into a writable Applications folder first.
 Older custom DMGs require one manual upgrade to acquire this updater.
+Custom tabs keep a fixed 220px width while their label follows the focused panel.
+Traex labels in Agents, tabs and pane headers resolve the process's own saved
+session name with a read-only probe on its machine; they refresh about every
+five seconds and fall back to its terminal title when metadata is unavailable.
 
 ## Show something when asked
 

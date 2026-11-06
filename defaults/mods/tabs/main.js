@@ -1,6 +1,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, terminals, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
+import { spaces, panes, terminals, run, openOverlay, theme, window, shared, setShared, exec, layout, settings } from "herdr";
+
+import { SessionTitles, sessionTitle, SESSION_KEY } from "./session-titles.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -13,7 +15,7 @@ function find(node, id) {
 
 function tabTitle(tab, panel, all, record) {
   const program = panel?.program;
-  let ownTitle = (record?.report?.title || panel?.title || "").trim()
+  let ownTitle = (sessionTitle(record, shared(SESSION_KEY)) || record?.report?.title || panel?.title || "").trim()
     .replace(/^[^\p{L}\p{N}~/]+/u, "");
   if (program?.key === "traex") ownTitle = ownTitle.replace(/^Action Required\s*\|\s*/i, "");
   // Explicit descriptive tab names stay fixed; old program-name tabs follow focus.
@@ -25,7 +27,9 @@ function tabTitle(tab, panel, all, record) {
 }
 
 export default class Tabs extends View {
-  init() {
+  init(_props, cx) {
+    this.sessions = new SessionTitles({ exec, terminals, shared, setShared });
+    cx.timer.every(5000, cx => { this.sessions.refresh(cx); cx.notify(); });
     this.pressed = null;
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
   }
@@ -76,7 +80,8 @@ export default class Tabs extends View {
       ?? all.find(p => p.tab === tab);
   }
 
-  render() {
+  render(cx) {
+    this.sessions?.refresh(cx);
     const t = theme();
     const space = spaces().find(p => p.active);
     const shown = space?.tabs ?? [];
@@ -95,7 +100,7 @@ export default class Tabs extends View {
         .on_mouse_move((e, cx) => {
           if (shared("pane.dragging")) run("pane.drag.target", { tab:c.id, ...e.bounds });
           cx.stop_propagation();
-        }).h(32).min_w(160).px(14).gap(9).rounded(7).items_center().flex_none().text_size(12.8)
+        }).h(32).w(220).min_w(220).max_w(220).px(14).gap(9).rounded(7).items_center().flex_none().text_size(12.8)
         .border(1).border_color(c.active ? t.border : t.chrome).bg(c.active ? t.raised : t.chrome).text_color(c.active ? t.foreground : t.muted)
         .hover(s => s.bg(t.hover))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
@@ -105,11 +110,12 @@ export default class Tabs extends View {
           else run("tab.select", { id: c.id });
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
-        .when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).text_color(t.muted) : image(program.icon).size(14)))
-        .child(div().flex_1().min_w(0).max_w(220).truncate().tooltip(name).child(c.zoomed ? `${name} Z` : name))
+        .child(div().size(14).flex_none().when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).text_color(t.muted) : image(program.icon).size(14))))
+        .child(div().flex_1().min_w(0).truncate().tooltip(name).child(c.zoomed ? `${name} Z` : name))
+        .child(div().size(12).flex_none()
         .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
-        .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status])))
-        .when(c.active, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(12))));
+        .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status]))))
+        .child(div().size(12).flex_none().when(c.active, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(12)))));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
