@@ -58,6 +58,20 @@ failure was also observed, but native error-state notifications and full session
 names beyond the terminal-provided title have not been verified. This integration
 passes through native reports rather than inferring states from screen text.
 
+## macOS display-transition crash fix
+
+The macOS window backend now checks for a missing `NSScreen` before reading its
+visible frame to determine whether a window is maximized. AppKit can temporarily
+return no screen during display or Space transitions; the previous Cocoa wrapper
+constructed a null Rust reference and aborted the application. During that short
+interval the maximize query returns false and is recalculated on later frames.
+The other visible-frame and screen/frame paths were checked for matching guards.
+
+The regression test calls the production screen-size helper with `nil`; the
+macOS backend's 21 unit tests pass. A real display unplug/reconfiguration race
+has not been forced on the user's desktop. This patch concerns the app window,
+not the independently running core or terminal processes.
+
 ## Branches and remotes
 
 Keep `master` as the upstream baseline and `custom` as the maintained custom

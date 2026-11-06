@@ -866,16 +866,13 @@ impl MacWindowState {
     }
 
     fn is_maximized(&self) -> bool {
-        fn rect_to_size(rect: NSRect) -> Size<Pixels> {
-            let NSSize { width, height } = rect.size;
-            size(width.into(), height.into())
-        }
-
-        unsafe {
-            let bounds = self.bounds();
-            let screen_size = rect_to_size(self.native_window.screen().visibleFrame());
-            bounds.size == screen_size
-        }
+        // HERDR: AppKit can detach a window from its screen during display/Space
+        // transitions. Cocoa's visibleFrame wrapper constructs a Rust reference,
+        // so sending it to nil aborts instead of behaving like an Objective-C nil message.
+        let Some(screen_size) = visible_screen_size(unsafe { self.native_window.screen() }) else {
+            return false;
+        };
+        self.bounds().size == screen_size
     }
 
     fn is_fullscreen(&self) -> bool {
@@ -3805,6 +3802,14 @@ where
     }
 }
 
+fn visible_screen_size(screen: id) -> Option<Size<Pixels>> {
+    if screen.is_null() {
+        return None;
+    }
+    let NSSize { width, height } = unsafe { NSScreen::visibleFrame(screen) }.size;
+    Some(size(width.into(), height.into()))
+}
+
 fn display_id_for_screen(screen: id) -> Option<CGDirectDisplayID> {
     if screen.is_null() {
         return None;
@@ -3975,5 +3980,12 @@ mod tests {
     #[test]
     fn display_id_for_screen_returns_none_for_null_screen() {
         assert_eq!(display_id_for_screen(nil), None);
+    }
+
+    #[test]
+    fn visible_screen_size_returns_none_for_null_screen() {
+        // Reproduce the nil NSScreen in the 2026-11-06 is_maximized crash.
+        // In debug builds calling visibleFrame directly would abort the process.
+        assert_eq!(visible_screen_size(nil), None);
     }
 }
