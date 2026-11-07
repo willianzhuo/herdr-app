@@ -1,4 +1,26 @@
-import { run as nativeRun, spaces, focused, appHome, readTextFile, notify } from "herdr";
+import { run as nativeRun, spaces, focused, appHome, readTextFile, notify, exec } from "herdr";
+
+const preparing = new Map();
+
+async function prepareShell(machine, folder) {
+  // Unix mappings opt in. Local terminals and Windows paths keep their normal
+  // shell setup. Coalesce concurrent clicks, but recheck on each later creation:
+  // a remote home or platform startup files may have changed after a reboot.
+  if (!machine || typeof folder !== "string" || !folder.startsWith("/")) return;
+  if (!preparing.has(machine)) {
+    const job = (async () => {
+      const script = await readTextFile(`${appHome()}/shell-directory-install.py`);
+      if (!script) throw new Error("缺少 shell-directory-install.py，请同步目录修复脚本。");
+      const result = await exec("python3", ["-c", script], { on: machine, timeout: 15000 });
+      if (result.code !== 0) throw new Error(`远端目录保护配置失败：${result.stderr || result.stdout}`);
+      const status = JSON.parse(result.stdout).status;
+      if (!["installed", "unchanged", "unsupported"].includes(status)) throw new Error("远端目录保护返回了未知结果。");
+    })();
+    preparing.set(machine, job);
+  }
+  try { await preparing.get(machine); }
+  finally { preparing.delete(machine); }
+}
 
 // Capture the target before reading the file: switching tabs while it loads must
 // not accidentally create a terminal on a different machine.
@@ -38,7 +60,7 @@ export function applyDirectory(text, target, explicitFolder) {
 export function run(command, args = {}) {
   // Explicit directories (including worktrees) and non-terminal tabs retain
   // their requested destination. This custom action handles spaces and tabs.
-  if (!(["space.new", "tab.new"].includes(command)) || args.mod || args.folder != null)
+  if (!(["space.new", "tab.new"].includes(command)) || args.mod)
     return nativeRun(command, args);
   const target = resolveTarget(command, args, spaces(), focused());
   return launch(target);
@@ -48,12 +70,11 @@ async function launch(target) {
   try {
     // Existing workspaces keep the focused terminal's directory. Only a new
     // workspace uses the machine's configured default.
-    if (target.command === "tab.new") {
-      nativeRun(target.command, target.args);
-      return;
-    }
     const text = await readTextFile(`${appHome()}/machine-directories.json`);
-    const request = applyDirectory(text, target);
+    const mapped = applyDirectory(text, target, target.args.folder);
+    const request = target.command === "tab.new" ? target : mapped;
+    const map = text == null ? {} : JSON.parse(text);
+    await prepareShell(target.machine, map[target.machine]);
     nativeRun(request.command, request.args);
   } catch (error) {
     notify({ title: "无法按默认目录新建", body: `检查 machine-directories.json：${String(error)}`, level: "error" });

@@ -136,6 +136,11 @@ the highlighted line shows where it will land.
   with the same address; its original command is never run again. Splits
   and mod panes stay. An exited or killed terminal is closed, not restarted.
   Focus, zoom, recent spaces, settled tabs and seen attention stay on this screen.
+  In this fork's optional machine-directory setup, `shell-directory-install.py`
+  in the app home prepares mapped Unix machines before terminal creation. Its
+  user-owned Bash startup guard preserves core's requested cwd through platform
+  initializers and keep recovery. It leaves ordinary SSH and existing processes
+  alone; see `docs/custom-fork.md` for installation and removal.
 - Every terminal is a core terminal. Herdr labels the ones it starts with
   `herdr.space=<id>` and `herdr.tab=<id>`. **A terminal with those
   labels shows up there**, even one you start yourself:
@@ -591,12 +596,16 @@ The main ones:
   skip settled tabs).
 - Panes: `pane.split {direction: "right" | "down", pane?, argv? | mod?, props?}` (a new
   terminal, or a mod pane), `pane.close {pane?}`,
-  `pane.zoom {pane?}`, `pane.focus {pane | terminal}`, `pane.go {direction}`, `pane.swap {direction}`.
+  `pane.zoom {pane?}`, `pane.focus {pane | terminal}`, `pane.go {direction}`,
+  `pane.swap {pane?, direction | target}`.
   `pane.go` prefers the most recently focused pane along the nearest edge in that
   direction; unvisited panes fall back to overlap, then top/left layout order.
   `pane.go` also reaches visible mods whose `mod.json` says `"focusable": true`, and
   starts from that mod while it holds the keyboard.
-  `pane.swap` uses geometry only. Focus history lasts until the window closes.
+  `pane.swap {direction}` uses geometry only. Focus history lasts until the window closes.
+  `pane.swap {target}` trades the places of `pane` (default: the focused one) and
+  `target`, another pane of the same tab; give `direction` or `target`, not both.
+  A swap moves panes, not focus: the focused pane stays focused in its new place.
   `pane.focus {terminal}` prefers the first visible layout terminal block showing that
   address, then its model pane. Clicking a terminal block focuses it too.
   While a layout terminal block is focused, implicit split/close/zoom/go/swap and
