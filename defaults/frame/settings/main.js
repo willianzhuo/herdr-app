@@ -2,7 +2,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, InputState, Input } from "gpui-base";
-import { hc, run, theme, themes, fonts, updates, telemetry, settings, layouts, shared, appHome, readTextFile, writeTextFile, playSound, props, closeOverlay, window } from "herdr";
+import { hc, run, theme, themes, fonts, updates, telemetry, settings, layouts, shared, setShared, appHome, readTextFile, writeTextFile, playSound, props, closeOverlay, window } from "herdr";
 
 const I = (name) => `frame/settings/${name}.svg`;
 
@@ -25,6 +25,13 @@ const APPEARANCES = [
 // What the app uses when settings.json names no font (settings.rs).
 const DEFAULT_FONT = "JetBrains Mono";
 const DEFAULT_UI_FONT = "Geist";
+
+// Keep the frame independent of editable tab mods; they read this same preference.
+function tabWidth() {
+  const width = shared("tabs.width");
+  return typeof width === "number" && Number.isFinite(width) && width > 0
+    ? Math.max(160, Math.min(400, Math.round(width))) : 220;
+}
 
 export default class Settings extends View {
   init(_props, cx) {
@@ -459,6 +466,17 @@ export default class Settings extends View {
       );
   }
 
+  tabWidthControl(t) {
+    const width = tabWidth();
+    return h_flex()
+      .gap(8)
+      .items_center()
+      .child(this.stepper(t, "st-tab-width", `${width} px`,
+        () => setShared("tabs.width", Math.max(160, tabWidth() - 20)),
+        () => setShared("tabs.width", Math.min(400, tabWidth() + 20))))
+      .child(this.button(t, "st-tab-width-reset", "Reset", () => setShared("tabs.width", null)));
+  }
+
   look(t, cx) {
     const s = settings();
     const p = this.person;
@@ -507,6 +525,7 @@ export default class Settings extends View {
             .child(this.button(t, "st-zoom-reset", "Reset", () => run("app.zoom_reset"))),
         ),
       )
+      .child(this.row(t, "Tab width", "Keep tabs the same width as pane titles and agent states change.", this.tabWidthControl(t)))
       .child(fontRow("font", "font_size", "Terminal font", s.font_family, DEFAULT_FONT, s.font_size))
       .child(fontRow("ui_font", null, "Interface font", s.ui_font_family, DEFAULT_UI_FONT));
   }

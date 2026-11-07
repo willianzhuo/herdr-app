@@ -159,9 +159,16 @@ the highlighted line shows where it will land.
   pane's title or its tab's name. Tabs follow their last focused panel's title;
   descriptive manually named tabs stay fixed. Numeric and program-name tabs
   follow focus. The tab-bar mod remembers each tab's title focus locally.
-  Tabs use a fixed 220px logical width, with reserved icon/status/close slots;
+  Tabs use a fixed logical width (default 220px), with reserved icon/status/close slots;
   long titles truncate and show in full on hover. Panel focus and changing
   titles never resize a tab.
+  Settings → Look → **Tab width** adjusts it from 160 to 400 px in 20 px steps;
+  Reset restores 220 px. Changes apply immediately, follow app zoom and persist
+  in `shared.json` as the mod preference `tabs.width`, separate from settings.json.
+  The built-in tab bar and updated directory-routing example both read it.
+  From a mod, `setShared("tabs.width", 240)` applies and saves the width;
+  null or an absent/invalid value uses 220 px. Older personal tab mods need the
+  updated code to honor this preference.
   For Traex, the custom sidebar, focused tab and panel headers prefer the
   process's actual session name over its often-generic terminal title (`work`).
   Sandboxed copies of `session-titles.js` batch read-only Python 3 probes per

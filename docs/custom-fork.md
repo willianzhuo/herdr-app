@@ -9,9 +9,16 @@ move; the terminal backend is unchanged.
   tab and then drop on a pane edge to choose the split direction.
 - Escape or dropping outside a destination cancels. A tab's only pane can merge
   into another tab; detaching it into another single-pane tab is a no-op.
-- Tabs have a fixed width of 220 logical px, with reserved icon, status and close
+- Tabs have a fixed width (default 220 logical px), with reserved icon, status and close
   slots. Focus/title/status changes do not resize tabs. Long titles truncate and
   remain available in a tooltip.
+
+Settings → Look → **Tab width** adjusts all tabs from 160 to 400 px in 20 px steps;
+Reset restores 220 px. The preference follows app zoom, applies immediately and
+persists in the app home's `shared.json` as `tabs.width`. The built-in tab bar and
+updated `personal-config/tabs-copy-main.js` both honor it. Older personal copies
+need the updated tab mod code. This setting does not alter session titles or
+machine layout documents.
 
 ## Focus and session titles
 

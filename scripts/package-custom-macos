@@ -79,9 +79,11 @@ Traex：支持 Agent 名称识别和官方 Logo；状态上报已测试 Traex 0.
 旧版 0.213.1 的测试未上报状态，已有旧会话不会被自动重启。
 Traex recognition uses the official logo. Native agent status was verified with
 Traex 0.214.1; the 0.213.1 control did not report status. Old sessions stay running.
-Tab 宽度固定 220px；Traex 的 Agents/Tab/Panel 显示实际保存的 Session 名。
+Tab 默认宽度 220px，可在 Settings → Look → Tab width 调整为 160–400px。
+Traex 的 Agents/Tab/Panel 显示实际保存的 Session 名。
 会话名查询需要目标机有 Python 3 且当前进程的会话元数据可读；否则沿用终端标题。
-Tabs stay 220px wide. Traex session names appear in Agents, tabs and pane headers.
+Tabs default to 220px wide; adjust them in Settings → Look → Tab width (160–400px).
+Traex session names appear in Agents, tabs and pane headers.
 Name lookup needs Python 3 and readable process/session metadata on that machine;
 otherwise it keeps the terminal title. Session/status processes are not modified.
 
