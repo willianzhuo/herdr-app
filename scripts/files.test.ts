@@ -127,3 +127,125 @@ test("Files follows directory links one level at a time", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// Render the real Files view with native-element stand-ins; click its actual
+// mode/refresh/back handlers and control file reads independently of the tree.
+function previewHarness(reader: () => Promise<string | null>, fixed?: any) {
+  const tasks: Promise<unknown>[] = [], reads: unknown[] = [], editors: any[] = [], runs: any[] = [];
+  let load = reader;
+  let panelProps = fixed;
+  let browsingFolder = "/remote/work";
+  const element = (kind: string, value?: unknown): any => {
+    const node: any = {kind, value, kids:[], methods:new Map()};
+    const proxy: any = new Proxy(node, {get(target, name: string) {
+      if (name in target) return target[name];
+      return (...args: any[]) => {
+        if (name === "when") return args[0] ? args[1](proxy) : proxy;
+        if (name === "child") target.kids.push(args[0]);
+        if (name === "children") target.kids.push(...args[0]);
+        target.methods.set(name,args); return proxy;
+      };
+    }});
+    return proxy;
+  };
+  const context = {cwd:"/remote/work",on:"box",space:"space"};
+  const theme = new Proxy({}, {get:()=>"#112233"});
+  const Files = new Function("View","div","svg","v_flex","h_flex","Editor","EditorState","TextView",
+    "spaces","panes","focused","exec","readTextFile","watchFolder","theme","settings","window","run",
+    source.replace(/^import .*;\n/gm, "").replace("export default class Files", "class Files") + ";return Files;")(
+      class {}, () => element("div"), () => element("svg"), () => element("column"), () => element("row"),
+      {new:(state: any)=>element("editor",state)}, {new:(options: any)=>{const state={...options,released:false,release(){this.released=true;}};editors.push(state);return state;}},
+      {markdown:(id: string,text: string)=>element("markdown",text).id(id)},
+      () => [{id:"space",active:true,machine:"box",folder:browsingFolder,tabs:[{id:"tab",active:true}]}], () => [{pane:"pane",tab:"tab",focused:true,cwd:browsingFolder}], () => ({pane:"pane"}),
+      async()=>({code:1}), async(...args: any[])=>{reads.push(args);return load();}, async()=>{}, () => theme,
+      () => ({font_family:"Monospace"}), () => ({platform:"linux"}), (...args: any[])=>runs.push(args),
+  );
+  const Panel = fixed ? new Function("Files","div","props",panelSource.replace(/^import .*;\n/gm, "").replace("export default class FilePanel","class FilePanel")+";return FilePanel;")(Files,()=>element("div"),()=>panelProps) : Files;
+  const view = new Panel();
+  Object.assign(view,{context:{...context,key:JSON.stringify(context)},root:context.cwd,on:context.on,entries:new Map(),folders:new Set(),marks:{}});
+  const cx: any = {notify(){},timer:{every(){}},spawn(fn: any){tasks.push(fn(cx));}};
+  view.init({},cx);
+  const flatten = (node: any): any[] => typeof node === "object" && node !== null ? [node,...(node.kids ?? []).flatMap(flatten)] : [];
+  const nodes = () => flatten(view.render(cx));
+  const click = (id: string) => nodes().find(n=>n.methods?.get("id")?.[0]===id).methods.get("on_click")[0]({},cx);
+  return {view,cx,reads,editors,nodes,click,runs,setReader:(r: typeof reader)=>{load=r;},setProps:(p:any)=>{panelProps=p;},switchFolder:()=>{browsingFolder="/other/project";},flush:async()=>{await Promise.all(tasks.splice(0));}};
+}
+
+const panelSource = await readFile(new URL("../defaults/mods/file-panel/main.js",import.meta.url),"utf8");
+
+test("Markdown defaults to selectable rendered preview and switches to read-only source without rereading", async () => {
+  const text="# 标题\n\n**Bold** and `code`\n\n- first\n- second\n\n```js\nconst answer = 42;\n```";
+  const h=previewHarness(async()=>text);
+  h.view.show("README.MD",h.cx);await h.flush();
+  const preview=h.nodes().find(n=>n.kind==="markdown");
+  expect(preview.value).toBe(text);
+  expect(preview.methods.get("selectable")).toEqual([true]);
+  expect(preview.methods.get("scrollable")).toEqual([true]);
+  expect(h.reads).toEqual([["/remote/work/README.MD",{on:"box"}]]);
+  h.click("files-mode-source");
+  expect(h.nodes().find(n=>n.kind==="editor").value).toMatchObject({readonly:true,language:"markdown",value:text});
+  h.click("files-mode-preview");
+  expect(h.nodes().some(n=>n.kind==="markdown")).toBe(true);
+  expect(h.reads).toHaveLength(1);
+  h.click("files-back");
+  expect(h.view.file).toBeNull();expect(h.editors[0].released).toBe(true);
+});
+
+test("switching away and reopening the same Markdown file ignores its old in-flight read", async () => {
+  let old!: (value: string)=>void;
+  const h=previewHarness(()=>new Promise(resolve=>{old=resolve;}));
+  h.view.show("guide.md",h.cx);
+  h.view.show(null);
+  h.setReader(async()=>"# New");h.view.show("guide.md",h.cx);
+  old("# Stale");await h.flush();
+  expect(h.view.text).toBe("# New");
+  expect(h.view.reading).toBe(false);
+});
+
+test("Markdown refresh preserves unchanged editor state, updates content and handles deletion/binary data", async () => {
+  const h=previewHarness(async()=>"# Original");h.view.show("guide.markdown",h.cx);await h.flush();
+  const original=h.view.code;
+  h.click("files-refresh");await h.flush();expect(h.view.code).toBe(original);
+  h.setReader(async()=>"# Changed");h.click("files-refresh");await h.flush();
+  expect(h.view.text).toBe("# Changed");expect(original.released).toBe(true);
+  h.setReader(async()=>null);h.click("files-refresh");await h.flush();
+  expect(h.view.text).toBeNull();expect(h.view.fileError).toContain("no longer available");
+  h.setReader(async()=>"binary\0data");h.click("files-refresh");await h.flush();
+  expect(h.view.code).toBeNull();expect(h.view.fileError).toContain("Binary file");
+});
+
+test("empty/large Markdown stays bounded and ordinary files keep source preview", async () => {
+  const h=previewHarness(async()=>"");h.view.show("empty.mdown",h.cx);await h.flush();
+  expect(h.nodes().find(n=>n.kind==="markdown").value).toBe("");
+  h.setReader(async()=>"x".repeat(400001));h.view.show("large.md",h.cx);await h.flush();
+  expect(h.view.truncated).toBe(true);expect(h.view.text.length).toBeLessThan(400050);
+  h.setReader(async()=>'{"ok":true}');h.view.show("data.JSON",h.cx);await h.flush();
+  expect(h.nodes().some(n=>n.kind==="markdown")).toBe(false);
+  expect(h.nodes().find(n=>n.kind==="editor").value.language).toBe("json");
+});
+
+test("file actions create real mod panes/tabs with a captured path and machine, not file content", async () => {
+  const h=previewHarness(async()=>"# Private content");h.view.show("docs/Guide.MD",h.cx);await h.flush();
+  h.click("files-open-panel");h.click("files-open-tab");
+  const props={path:"/remote/work/docs/Guide.MD",on:"box",title:"Guide.MD",folder:"/remote/work/docs"};
+  expect(h.runs).toEqual([
+    ["pane.split",{pane:"pane",direction:"right",mod:"file-panel",props}],
+    ["tab.new",{space:"space",name:"Guide.MD",mod:"file-panel",props}],
+  ]);
+  expect(h.reads).toHaveLength(1);
+});
+
+test("independent file panels retain their path/machine across terminal focus and react only to their own props", async () => {
+  const h=previewHarness(async()=>"# Own file",{path:"/remote/work/docs/Guide.md",on:"box"});await h.flush();
+  h.switchFolder();expect(h.nodes().find(n=>n.kind==="markdown").value).toBe("# Own file");
+  expect(h.view.root).toBe("/remote/work/docs");
+  expect(h.reads).toEqual([["/remote/work/docs/Guide.md",{on:"box"}]]);
+  expect(h.nodes().some(n=>n.methods?.get("id")?.[0]==="files-back")).toBe(false);
+  expect(h.nodes().some(n=>n.methods?.get("id")?.[0]==="files-open-panel")).toBe(false);
+  h.setProps({path:"C:/Other Folder/README.md",on:"win"});h.nodes();await h.flush();
+  expect(h.reads.at(-1)).toEqual(["C:/Other Folder/README.md",{on:"win"}]);
+});
+
+test("file panels ship the exact same bounded read-only viewer as Files", async () => {
+  expect(await readFile(new URL("../defaults/mods/file-panel/files.js",import.meta.url),"utf8")).toBe(source);
+});

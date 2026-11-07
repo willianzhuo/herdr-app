@@ -1715,8 +1715,9 @@ impl AppWindow {
                     let focused = m.active.as_deref() == Some(pr.id.as_str()) && focused_pane.as_deref() == Some(p.id.as_str());
                     let zoomed = ctx.zoomed.as_deref() == Some(p.id.as_str());
                     // A mod pane: what it shows, no terminal.
-                    if let Some(Content::Mod { name, .. }) = p.content() {
-                        panes.push(json!({ "pane": p.id, "terminal": null, "mod": name, "tab": ctx.id, "title": name, "focused": focused, "zoomed": zoomed, "movable": self.pane_movable(&p.id) }));
+                    if let Some(Content::Mod { name, props }) = p.content() {
+                        let title = props["title"].as_str().filter(|s| !s.trim().is_empty()).unwrap_or(name);
+                        panes.push(json!({ "pane": p.id, "terminal": null, "mod": name, "tab": ctx.id, "title": title, "cwd": props["folder"].as_str(), "focused": focused, "zoomed": zoomed, "movable": self.pane_movable(&p.id) }));
                         continue;
                     }
                     let Some(addr) = p.terminal() else { continue };
@@ -5379,6 +5380,39 @@ mod tests {
     #[test]
     fn showing_the_tab_again_gives_its_pane_the_keyboard() {
         in_own_process("tab_shown_again");
+    }
+
+    #[test]
+    fn mod_panes_relocate_without_a_terminal_address() {
+        in_own_process("mod_pane_relocation");
+    }
+
+    #[gpui::test]
+    fn mod_pane_relocation(cx: &mut gpui::TestAppContext) {
+        use serde_json::json;
+        if !running_alone("mod_pane_relocation") { return; }
+        let (view, cx) = open_window(cx, "quiet", "import {View, div} from 'gpui-kit'; export default class Quiet extends View {render(){return div();}}", json!({
+            "id":"root", "type":"block", "content":{"tab":"active"}
+        }));
+        cx.update(|window, cx| view.update(cx, |this, cx| {
+            use crate::{layout::{Content, Edge, Node}, model::Tab};
+            let props = json!({"title":"Guide.md", "folder":"/project/docs", "path":"/project/docs/Guide.md", "on":"remote"});
+            let node = || Node::block("file", Content::Mod {name:"quiet".into(), props:props.clone()});
+            this.model.add_space("space", "", "/project", Tab::with_pane("a", "", node()));
+            this.model.add_tab("space", Tab::with_pane("b", "", Node::block("other", Content::Mod {name:"quiet".into(),props:json!({})})));
+            this.documents.entry(String::new()).or_default().available = true;
+            // The fixture core is offline; a terminal-label RPC would fail to move.
+            this.documents_watching = false;
+            this.start_pane_relocation("file", Some("other".into()), Edge::Right, window, cx);
+            assert_eq!(this.model.tab_of("file").unwrap().id, "b");
+            assert!(this.model.tab("a").is_none());
+            assert_eq!(this.model.tab_of("file").unwrap().root.find("file").unwrap().content(), node().content());
+            assert!(this.pending_terminals.is_empty());
+            this.start_pane_relocation("file", None, Edge::Right, window, cx);
+            assert_ne!(this.model.tab_of("file").unwrap().id, "b");
+            assert!(this.pending_terminals.is_empty());
+            assert_eq!(this.model.focused_pane().as_deref(), Some("file"));
+        }));
     }
 
     /// A home page in a stack beside the tab: a space made while it shows

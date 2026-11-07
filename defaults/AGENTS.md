@@ -220,6 +220,22 @@ writing a new file. The Files panel supports Windows folder paths with spaces,
 parentheses and apostrophes, and preserves Unicode file and folder names
 (including Chinese). Directory links expand as folders; their contents load
 only when expanded.
+Markdown files (`.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`, `.mdwn`, case
+insensitive) open as a selectable, scrollable rendered preview. **Preview** /
+**Source** switches between Markdown and the read-only source editor without
+rereading the file. The refresh button reloads it; open Markdown also refreshes
+on the Files timer and local folder notifications. Previews keep the existing
+400,000-character bound and show truncation. Reads retain the focused machine;
+switching files/folders discards stale replies. Markdown uses native TextView
+rendering and its existing URL/image policy; SSH-relative images and links are
+not translated into local filesystem paths. Preview never writes a file.
+The file toolbar's **Panel** opens the file beside the focused pane; **New tab**
+opens it in its own tab. Both use the `file-panel` mod, whose `{path, on, title,
+folder}` props pin the file and machine independently of terminal focus. File
+panels support split resizing, zoom, close, same-tab rearrangement and the
+custom cross-tab grip drag within their workspace. The pane id and file props
+survive a move and layout restoration. Mod panes may provide `props.title` and
+`props.folder` for the existing `panes().title` / `cwd` fields and header/tab labels.
 
 **Herdr's own layouts and mods are read-only.** They are replaced whole
 on every start. Use settings.json for look (fonts, sizes, theme, colors,
