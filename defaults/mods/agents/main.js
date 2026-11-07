@@ -7,6 +7,8 @@ import { agents, terminals, panes, focused, spaces, knownAgents, exec, run, them
 
 import { SessionTitles, sessionTitle, SESSION_KEY } from "./session-titles.js";
 
+import { ClaudeStatus, claudeSession, claudeAgents, CLAUDE_KEY } from "./claude-status.js";
+
 function find(node, id) {
   if (node?.id === id) return node;
   for (const child of node?.children ?? []) {
@@ -32,7 +34,7 @@ const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
 
 // Resolve each agent by its own terminal address, never by its containing tab.
 function agentTitle(agent, pane, terminal) {
-  const session = sessionTitle(terminal, shared(SESSION_KEY));
+  const session = claudeSession(terminal, shared(CLAUDE_KEY))?.name || sessionTitle(terminal, shared(SESSION_KEY));
   if (session) return session;
   const title = clean(terminal?.report?.title) || clean(pane?.title) || clean(agent.title)
     || terminal?.name || agent.program?.name || agent.address;
@@ -255,6 +257,10 @@ export default class Agents extends View {
   }
 
   render(cx) {
+    if (!props()?.sortMenu) {
+      this.claude ??= new ClaudeStatus({ exec, terminals, shared, setShared });
+      this.claude.refresh(cx);
+    }
     this.sessions?.refresh(cx);
     const t = theme();
     if (props()?.sortMenu) return this.sortMenu(t);
@@ -263,6 +269,7 @@ export default class Agents extends View {
     const all = terminals();
     const panelSnapshot = panes();
     let list = includeUnreportedAgents(agents(), all, panelSnapshot, spaces(), this.agentKeys);
+    list = claudeAgents(list, all, shared(CLAUDE_KEY));
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     this.migratePins(all);
     const shown = focused()?.agent;

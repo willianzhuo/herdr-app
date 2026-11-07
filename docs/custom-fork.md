@@ -132,6 +132,31 @@ Returning to a shell/editor or ending the process removes the fallback. The
 presence fallback does not generate busy/done states, notifications or core data;
 agent API/cycle navigation and rollups continue to use actual status reports.
 
+Claude Agent View background sessions now have a display fallback on Linux.
+`claude-status.js` calls the foreground process's own executable with
+`agents --json --all`, using its own HOME and CLAUDE_CONFIG_DIR. It reads the
+supported CLI state API rather than depending on the internal jobs/state files.
+The terminal's current title, after removing its leading status glyph, must
+match exactly one background session name in that profile. It never selects a
+session by cwd, age, a launch-time resume argument, or another panel's title.
+Dashboard/duplicate/unmatched names stay unknown. Matching depends on Claude
+retaining that session name in the terminal title; no title means no fallback.
+
+The CLI's coarse `state` is authoritative even when its process `status` is idle
+between autonomous steps: working stays working, blocked stays Needs you, done
+stays done (idle in the focused sidebar row), and failed/stopped need attention.
+Native OSC reports take priority. Sidebar, tab rollups and framed pane headers
+share a cache bound to address, foreground PID, terminal creation and current
+title. Polls batch by machine/profile about every five seconds; cached entries
+expire after 12 seconds and stale in-flight reads cannot follow a session switch.
+Python 3 and readable Linux /proc metadata are needed; unavailable/unsupported
+machines keep Status unknown. No prompts, hooks, job files, core status writes,
+process restarts or new notifications are involved.
+
+The supported state fields and background reporting limitation are documented
+in [Claude Agent View](https://code.claude.com/docs/en/agent-view#read-session-state-from-a-script)
+and [terminal configuration](https://code.claude.com/docs/en/terminal-config#see-session-status-in-your-terminal).
+
 Regression coverage includes report → cleared report → resumed session,
 finished processes, shell/editor transitions, duplicate panels, remote addresses,
 both priority/grouped rendering, and one workspace header when reported and

@@ -2,15 +2,17 @@ import { test, expect } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { sessionTitle, SESSION_KEY } from "../defaults/mods/agents/session-titles.js";
 
+import { ClaudeStatus, claudeSession, claudeTabStatus, CLAUDE_KEY } from "../defaults/mods/agents/claude-status.js";
+
 for (const file of ["defaults/mods/tabs/main.js", "personal-config/tabs-copy-main.js"]) {
   const source = (await readFile(new URL(`../${file}`, import.meta.url), "utf8"))
     .replace(/^import .*;\n/gm, "").replace("export default class Tabs", "class Tabs");
   const storage = new Map<string, string>();
   let cache: any = null;
-  const { Tabs, title } = new Function("View", "localStorage", "sessionTitle", "SESSION_KEY", "shared", `${source}; return { Tabs, title: tabTitle };`)(class {}, {
+  const { Tabs, title } = new Function("View", "localStorage", "claudeSession", "CLAUDE_KEY", "sessionTitle", "SESSION_KEY", "shared", `${source}; return { Tabs, title: tabTitle };`)(class {}, {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => storage.set(key, value),
-  }, sessionTitle, SESSION_KEY, () => cache);
+  }, claudeSession, CLAUDE_KEY, sessionTitle, SESSION_KEY, () => cache);
   const pane = (tab: string, id: string, focused = false) => ({
     tab, pane: id, focused, terminal: id, title: `${id} session`, program: { name: "Codex", key: "codex" },
   });
@@ -94,7 +96,7 @@ function widthHarness(source: string, settingsSource: string) {
     setShared: (key: string, value: unknown) => preferences.set(key, value),
     spaces: () => [{ id: "space", active: true, tabs }], panes: () => panels, terminals: () => [],
     settings: () => ({ zoom: 1 }), theme: () => ({}), layout: () => ({}), window: () => ({ platform: "macos" }),
-    run: () => {}, openOverlay: () => {}, sessionTitle, SESSION_KEY,
+    run: () => {}, openOverlay: () => {}, sessionTitle, SESSION_KEY, ClaudeStatus, claudeSession, claudeTabStatus, CLAUDE_KEY, exec: async () => ({code:1}),
   };
   const load = (code: string, name: string) => new Function(...Object.keys(globals), `${code}; return ${name};`)(...Object.values(globals));
   const Tabs = load(source, "Tabs"), Settings = load(settingsSource, "Settings");

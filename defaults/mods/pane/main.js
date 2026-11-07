@@ -10,6 +10,8 @@ import { panes, terminals, shared, props, run, theme, home } from "herdr";
 
 import { sessionTitle, SESSION_KEY } from "./session-titles.js";
 
+import { claudeSession, claudeStatus, CLAUDE_KEY } from "./claude-status.js";
+
 function icon(p, size, color) {
   if (!p?.icon) return null;
   return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
@@ -46,9 +48,10 @@ export default class Pane extends View {
     const t = theme();
     const p = this.me();
     if (!p) return div();
-    const name = sessionTitle(terminals().find(t => t.address === p.terminal), shared(SESSION_KEY)) || ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
+    const terminal = terminals().find(t => t.address === p.terminal);
+    const name = claudeSession(terminal, shared(CLAUDE_KEY))?.name || sessionTitle(terminal, shared(SESSION_KEY)) || ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     const pic = icon(p.program, 14, t.dim);
-    const st = p.status;
+    const st = claudeStatus(terminal, p.status, shared(CLAUDE_KEY));
     const pane = p.pane;
     return h_flex()
       .id(`pane-head-${pane}`)

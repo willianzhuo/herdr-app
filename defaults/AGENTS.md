@@ -190,8 +190,18 @@ the highlighted line shows where it will land.
   switch). These rows show a gray `?` / Status unknown, never an inferred idle,
   working or done state. A fresh report replaces the fallback without duplicating
   the row; exiting the agent or returning to a shell removes it. This is sidebar
-  presence only: `agents()` and agent status/notification rollups still describe
+  presence only: `agents()` and native status/notification rollups still describe
   actual reports. Use the pane row to focus an unreported terminal.
+- Claude Agent View background sessions do not emit terminal status even while
+  attached. On Linux machines, `claude-status.js` polls the foreground process's
+  own Claude binary/profile with `agents --json --all` about every five seconds.
+  It requires one exact session-name match for that terminal's current title;
+  duplicate names, dashboard titles, failures or unsupported machines keep `?`.
+  Agents, tab rollups and pane headers use this fallback only without a native
+  report. `claude.session-status` is keyed by full address, foreground PID,
+  creation time and title, expires after 12 seconds, and is invalidated by a
+  session switch. Python 3 and readable `/proc` process metadata are required.
+  No prompt, hook, job file, core status or running process is modified.
 - **Sub-agents** are terminals an agent started with `hc run`: the core
   records the starter as `parent` (see `terminals()`). They belong to their
   parent's tab without a pane; the `agents` mod shows them,
