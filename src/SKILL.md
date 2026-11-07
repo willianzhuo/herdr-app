@@ -30,6 +30,11 @@ Older custom DMGs require one manual upgrade to acquire this updater.
 Custom tabs keep a fixed width (default 220px) while their label follows the focused panel.
 Settings → Look → Tab width adjusts it from 160 to 400 px; Reset restores 220 px.
 This mod preference persists in `shared.json` as `tabs.width` and applies immediately.
+Files can open a selected file as a panel or a new tab. The `file-panel` mod
+uses `{path, on, title, folder}` props to pin its file and machine; it does not
+follow terminal focus or write the file. Markdown has Preview / Source modes.
+Move a file panel by its top-center grip, including between tabs within the
+same workspace. Moves retain the panel id, props and terminal processes.
 Traex labels in Agents, tabs and pane headers resolve the process's own saved
 session name with a read-only probe on its machine; they refresh about every
 five seconds and fall back to its terminal title when metadata is unavailable.

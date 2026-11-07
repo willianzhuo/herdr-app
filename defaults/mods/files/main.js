@@ -1,7 +1,7 @@
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, TextView } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run } from "herdr";
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -72,11 +72,11 @@ export default class Files extends View {
   }
 
   refresh(cx) {
-    const { cwd, on } = location(), next = key();
+    const { cwd, on, space } = location(), next = key();
     if (next !== this.context?.key) {
       if (this.context) this.saved.set(this.context.key, { folders: this.folders, file: this.file });
       const saved = this.saved.get(next);
-      this.context = { key: next, cwd, on }; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = new Set(saved?.folders);
+      this.context = { key: next, cwd, on, space }; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = new Set(saved?.folders);
       this.pending = new Set(); this.marks = {}; this.show(null); this.watched = null; this.error = null; this.limited = false;
       this.loading = false;
       if (saved?.file) this.show(saved.file, cx);
@@ -141,6 +141,18 @@ export default class Files extends View {
     this.code?.release(); this.code = null; this.text = null; this.fileError = message;
   }
 
+  openPanel(asTab = false) {
+    if (!this.file || this.detached) return;
+    const space = spaces().find(s => s.id === (this.context.space ?? location().space));
+    if (!space) return;
+    const tab = space.tabs?.find(t => t.active);
+    const pane = panes().find(p => p.tab === tab?.id && p.focused) ?? panes().find(p => p.tab === tab?.id);
+    const title = this.file.split("/").pop(), path = `${this.root}/${this.file}`;
+    const props = { path, on: this.on ?? null, title, folder: path.slice(0, path.lastIndexOf("/")) || "/" };
+    if (!asTab && pane) run("pane.split", { pane: pane.pane, direction: "right", mod: "file-panel", props });
+    else run("tab.new", { space: space.id, name: title, mod: "file-panel", props });
+  }
+
   loadFile(cx) {
     if (!this.file || this.reading) return;
     const context = this.context, root = this.root, on = this.on, path = this.file;
@@ -185,19 +197,25 @@ export default class Files extends View {
   }
 
   render(cx) {
-    if (key() !== this.context?.key) this.refresh(cx);
+    if (!this.detached && key() !== this.context?.key) this.refresh(cx);
     const t = theme();
     return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
-        .child(div().font_semibold().child("Files"))
+        .when(Boolean(this.file) && !this.detached, el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
+        .child(div().font_semibold().child(this.detached ? "File" : "Files"))
         .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).tooltip(this.file ?? this.root ?? "").child(this.file ?? this.root?.split(/[\\/]/).pop() ?? ""))
         .when(Boolean(this.file), el => el.child(div().id("files-refresh").w(20).flex_none().text_size(16).cursor_pointer().text_color(t.muted).tooltip("Refresh file")
           .on_click((_e, cx) => { this.loadFile(cx); cx.notify(); }).child("↻"))))
-      .when(Boolean(this.file) && this.markdown, el => el.child(h_flex().h(34).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
-        .children(["preview", "source"].map(mode => div().id(`files-mode-${mode}`).px(10).py(4).rounded(5).cursor_pointer()
+      .when(Boolean(this.file) && (this.markdown || !this.detached), el => el.child(h_flex().h(34).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
+        .when(this.markdown, el => el.children(["preview", "source"].map(mode => div().id(`files-mode-${mode}`).px(10).py(4).rounded(5).cursor_pointer()
           .bg(this.mode === mode ? t.hover : "#00000000").text_color(this.mode === mode ? t.foreground : t.dim)
-          .on_click((_e, cx) => { this.mode = mode; cx.notify(); }).child(mode === "preview" ? "Preview" : "Source")))))
+          .on_click((_e, cx) => { this.mode = mode; cx.notify(); }).child(mode === "preview" ? "Preview" : "Source"))))
+        .child(div().flex_1())
+        .when(!this.detached, el => el
+          .child(div().id("files-open-panel").px(8).py(4).rounded(5).cursor_pointer().text_color(t.muted).hover(s => s.bg(t.hover)).tooltip("Open this file beside the focused panel")
+            .on_click(() => this.openPanel()).child("Panel"))
+          .child(div().id("files-open-tab").px(8).py(4).rounded(5).cursor_pointer().text_color(t.muted).hover(s => s.bg(t.hover)).tooltip("Open this file in a new tab")
+            .on_click(() => this.openPanel(true)).child("New tab")))))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.rows("", 0, [], t))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))

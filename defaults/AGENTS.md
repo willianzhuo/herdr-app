@@ -229,6 +229,13 @@ on the Files timer and local folder notifications. Previews keep the existing
 switching files/folders discards stale replies. Markdown uses native TextView
 rendering and its existing URL/image policy; SSH-relative images and links are
 not translated into local filesystem paths. Preview never writes a file.
+The file toolbar's **Panel** opens the file beside the focused pane; **New tab**
+opens it in its own tab. Both use the `file-panel` mod, whose `{path, on, title,
+folder}` props pin the file and machine independently of terminal focus. File
+panels support split resizing, zoom, close, same-tab rearrangement and the
+custom cross-tab grip drag within their workspace. The pane id and file props
+survive a move and layout restoration. Mod panes may provide `props.title` and
+`props.folder` for the existing `panes().title` / `cwd` fields and header/tab labels.
 
 **Herdr's own layouts and mods are read-only.** They are replaced whole
 on every start. Use settings.json for look (fonts, sizes, theme, colors,

@@ -203,12 +203,12 @@ impl AppWindow {
         cx.notify();
     }
 
-    fn start_pane_relocation(&mut self, pane: &str, target: Option<String>, edge: Edge, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn start_pane_relocation(&mut self, pane: &str, target: Option<String>, edge: Edge, window: &mut Window, cx: &mut Context<Self>) {
         let Some(space) = self.model.space_of(pane) else { return };
         let space_id = space.id.clone();
         let machine = space.machine.clone();
-        let Some(address) = self.model.address_of(pane) else { return };
-        if self.changing_terminals.contains(&address) {
+        let address = self.model.address_of(pane);
+        if address.as_ref().is_some_and(|a| self.changing_terminals.contains(a)) {
             self.layout_notice("Pane is already moving", "Wait for the current move to finish.", window, cx);
             return;
         }
@@ -225,7 +225,14 @@ impl AppWindow {
             if self.model.tab_of(pane).is_none_or(|t| t.root.panes().len() < 2) { return; }
             self.model.fresh_id_on("tb", machine.as_deref())
         };
-        self.start_terminal_change(address, TerminalChange::Move { space:space_id, tab, pane:pane.to_owned(), target, edge }, window, cx);
+        if let Some(address) = address {
+            self.start_terminal_change(address, TerminalChange::Move { space:space_id, tab, pane:pane.to_owned(), target, edge }, window, cx);
+        } else if self.model.relocate_pane(pane, target.as_deref(), &tab, edge) {
+            // Mod panes have no terminal labels to update. Keep their identity
+            // and props, and persist the same workspace document as a split.
+            self.sync(window, cx);
+            self.flush_documents(false, window, cx);
+        }
     }
 
     pub(super) fn pane_drag_layer(&self, cx: &mut Context<Self>) -> AnyElement {

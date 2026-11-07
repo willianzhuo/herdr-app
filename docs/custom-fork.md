@@ -151,13 +151,28 @@ Empty files work, oversized previews are marked as truncated, and removed,
 binary or unreadable files show the existing error state. Stale reads cannot
 replace a newer file, even after closing/reopening the same path.
 
+**Panel** opens the selected file as a right split beside the focused pane;
+**New tab** opens it in its own tab. The `file-panel` mod stores only the file's
+path, machine and display metadata in pane props, not file contents. Its
+document remains fixed when terminal focus changes, and is restored with the
+workspace layout. It uses the same bounded read-only preview/source code as
+Files (`file-panel/files.js` is an identical sandbox-local copy, checked by tests).
+Resize, zoom and close it like a terminal pane, or drag its top-center grip to
+rearrange it, merge it into another tab, or detach it onto the tab-bar blank area.
+Cross-tab movement stays within the same workspace and retains the pane id,
+props and view; no terminal labels or processes are changed for mod-pane moves.
+Pane headers and focused-tab labels use the optional mod `props.title` and
+`props.folder` through the existing pane title/cwd fields.
+
 This is a hot-loadable mod change. Clone the built-in Files mod to a personal
 `files-markdown`, update its `main.js` from `defaults/mods/files/main.js` while
 rewriting its icon paths to `mods/files-markdown/`, and point the active personal
 layout's Files block at the clone. Personal copies survive app restarts and
 updates. Relative images/links are not mapped across SSH; rendered resources
 follow TextView's existing sandbox and HTTP(S) URL policy. No webview, new native
-API, dependency, file write or terminal restart is needed.
+API, dependency or file write is needed for previews. Cross-tab movement of
+file/mod panes requires the updated native Custom build; hot-loading the mods
+alone enables file panels, same-tab movement and previews in older builds.
 
 ## Branches and remotes
 

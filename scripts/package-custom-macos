@@ -91,6 +91,13 @@ Features: wider tabs; drag a pane's top-center grip onto another tab to merge,
 or onto the tab-strip blank area to detach. Moves preserve the running terminal
 and work within one workspace.
 
+Files 支持 Markdown 预览与只读源码切换。打开文件后，点击 Panel 放到
+终端旁，或点击 New tab 单独打开；文件 Panel 可以用顶部把手分屏移动、
+拖入同一工作区的其他 Tab，或拖到 Tab 栏空白处。文件路径和机器会保留。
+Files renders Markdown with a read-only Source toggle. Open a file and choose
+Panel or New tab, then use its top-center grip to move it like a terminal pane.
+File panes retain their path and machine across moves and app restarts.
+
 仅支持 Apple Silicon。herdr-core 需要单独安装（最低 0.1.11，已测试
 0.1.18），首次打开可按提示安装。
 Apple Silicon only. Install herdr-core separately (minimum 0.1.11; tested with
