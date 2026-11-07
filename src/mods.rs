@@ -974,9 +974,14 @@ fn module(inst: Instance, copy: u64) -> HostModule {
             // The table is loaded on the window thread; workers have only defaults.
             let list = crate::programs::startable();
             let (tx, rx) = async_channel::bounded(1);
-            std::thread::spawn(move || {
+            let run = move || {
                 let _ = tx.send_blocking(known_agents(on, list));
-            });
+            };
+            #[cfg(not(test))]
+            std::thread::spawn(run);
+            // Like exec_future, do not wake GPUI's test scheduler from an OS thread.
+            #[cfg(test)]
+            run();
             Ok(async move { Ok(to_host(&rx.recv().await.unwrap_or(Value::Array(Vec::new())))) })
         })
         .async_function("pickFolder", |a| {

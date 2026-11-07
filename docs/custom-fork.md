@@ -141,6 +141,27 @@ any running Claude or Traex session.
 
 ## Branches and remotes
 
+The 2026-11-07 selective sync takes these upstream commits, rather than merging
+the entire official branch:
+
+- `207dbdc`: swap two panes by ID within one tab.
+- `e7a6a91`, `99fa122`, `8ea7dcd`: test cleanup and deterministic command/file notifications.
+- `be1e225`: keep layout previews inside their cards.
+- `1eb838f`: close the modal dialog before closing the terminal behind it with a key.
+- `0e1b180`: preserve authored layout and panes on transient reconnect/attach errors.
+- `0b24b69`: wait briefly for the actual pane size before terminal replay.
+- `e5ba294`: distinguish a failed core connection from a missing core and offer Retry.
+
+The custom cross-tab pane-drag implementation and its model move/relocate methods
+remain unchanged. The new upstream swap command is independent. Session naming,
+Traex presence/status integration, custom icons, fullscreen hiding and the fork
+updater remain intact. PR #1's configurable tab width is included from `custom`.
+The upstream agent-title rewrite, Codex daemon launch flag, Add machine workflow,
+Windows-specific detection, Kimi aliases and macOS CLI-check launcher are not part
+of this selection. The same test-only dispatch treatment as `exec` is also applied
+to `knownAgents()` so it cannot wake GPUI's deterministic scheduler from an OS
+thread; production dispatch is unchanged.
+
 Keep `master` as the upstream baseline and `custom` as the maintained custom
 version. `origin` points to this fork; `upstream` points to
 `https://github.com/herdrdev/herdr-app.git`. Do not push custom commits upstream.
