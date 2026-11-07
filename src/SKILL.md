@@ -33,6 +33,14 @@ This mod preference persists in `shared.json` as `tabs.width` and applies immedi
 Traex labels in Agents, tabs and pane headers resolve the process's own saved
 session name with a read-only probe on its machine; they refresh about every
 five seconds and fall back to its terminal title when metadata is unavailable.
+Claude Agent View background sessions use a read-only `claude agents --json --all`
+fallback on Linux, through their foreground process's own binary and profile.
+The terminal's current title must match one session name exactly; duplicate or
+unmatched names keep Status unknown. Agents, tab rollups and pane headers refresh
+about every five seconds. A Claude Agent View dashboard shows the profile-wide
+working/needs-input summary as Claude Dashboard, with its scope in the tooltip;
+it is not treated as one attached session. This display fallback does not modify native core
+status or notifications, inject input, install hooks or restart any process.
 
 ## Show something when asked
 

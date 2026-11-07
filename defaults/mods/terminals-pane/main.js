@@ -6,6 +6,8 @@ import { panes, terminals, shared, props, run, home } from "herdr";
 
 import { sessionTitle, SESSION_KEY } from "./session-titles.js";
 
+import { claudeSession, CLAUDE_KEY } from "./claude-status.js";
+
 function folder(cwd) {
   if (!cwd) return "";
   const h = home();
@@ -39,7 +41,8 @@ export default class TerminalsPane extends View {
     const g = p.program;
     const where = folder(p.cwd);
     // Shells often put the folder in their title already.
-    const title = sessionTitle(terminals().find(t => t.address === p.terminal), shared(SESSION_KEY)) || p.title || "shell";
+    const terminal = terminals().find(t => t.address === p.terminal);
+    const title = claudeSession(terminal, shared(CLAUDE_KEY))?.name || sessionTitle(terminal, shared(SESSION_KEY)) || p.title || "shell";
     const dir = where && !title.includes(where) && !/^[~/]/.test(title) ? where : "";
     return h_flex()
       .id(`tm-head-${pane}`)

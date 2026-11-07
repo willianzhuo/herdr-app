@@ -4,6 +4,8 @@ import { spaces, panes, terminals, run, openOverlay, theme, window, shared, setS
 
 import { SessionTitles, sessionTitle, SESSION_KEY } from "./session-titles.js";
 
+import { ClaudeStatus, claudeSession, claudeTabStatus, CLAUDE_KEY } from "./claude-status.js";
+
 function find(node, id) {
   if (node?.id === id) return node;
   for (const child of node?.children ?? []) {
@@ -15,7 +17,7 @@ function find(node, id) {
 
 function tabTitle(tab, panel, all, record) {
   const program = panel?.program;
-  let ownTitle = (sessionTitle(record, shared(SESSION_KEY)) || record?.report?.title || panel?.title || "").trim()
+  let ownTitle = (claudeSession(record, shared(CLAUDE_KEY))?.name || sessionTitle(record, shared(SESSION_KEY)) || record?.report?.title || panel?.title || "").trim()
     .replace(/^[^\p{L}\p{N}~/]+/u, "");
   if (program?.key === "traex") ownTitle = ownTitle.replace(/^Action Required\s*\|\s*/i, "");
   // Explicit descriptive tab names stay fixed; old program-name tabs follow focus.
@@ -88,6 +90,8 @@ export default class Tabs extends View {
   }
 
   render(cx) {
+    this.claude ??= new ClaudeStatus({ exec, terminals, shared, setShared });
+    this.claude.refresh(cx);
     this.sessions?.refresh(cx);
     const t = theme();
     const space = spaces().find(p => p.active);
@@ -104,6 +108,7 @@ export default class Tabs extends View {
       const program = panel?.program;
       const record = records.get(panel?.terminal);
       const name = tabTitle(c, panel, allPanes, record);
+      const status = claudeTabStatus(c, allPanes, records, shared(CLAUDE_KEY));
       return h_flex().id(`tab-${c.id}`)
         .on_mouse_move((e, cx) => {
           if (shared("pane.dragging")) run("pane.drag.target", { tab:c.id, ...e.bounds });
@@ -121,8 +126,8 @@ export default class Tabs extends View {
         .child(div().size(14).flex_none().when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).text_color(t.muted) : image(program.icon).size(14))))
         .child(div().flex_1().min_w(0).truncate().tooltip(name).child(c.zoomed ? `${name} Z` : name))
         .child(div().size(12).flex_none()
-        .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
-        .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status]))))
+        .when(status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
+        .when(status === "blocked" || status === "done", el => el.child(div().size(6).rounded(3).bg(t[status]))))
         .child(div().size(12).flex_none().when(c.active, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(12)))));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();

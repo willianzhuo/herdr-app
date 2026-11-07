@@ -7,6 +7,8 @@ import { agents, terminals, panes, focused, spaces, knownAgents, exec, run, them
 
 import { SessionTitles, sessionTitle, SESSION_KEY } from "./session-titles.js";
 
+import { ClaudeStatus, claudeSession, claudeAgents, CLAUDE_KEY } from "./claude-status.js";
+
 function find(node, id) {
   if (node?.id === id) return node;
   for (const child of node?.children ?? []) {
@@ -32,7 +34,7 @@ const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
 
 // Resolve each agent by its own terminal address, never by its containing tab.
 function agentTitle(agent, pane, terminal) {
-  const session = sessionTitle(terminal, shared(SESSION_KEY));
+  const session = claudeSession(terminal, shared(CLAUDE_KEY))?.name || sessionTitle(terminal, shared(SESSION_KEY));
   if (session) return session;
   const title = clean(terminal?.report?.title) || clean(pane?.title) || clean(agent.title)
     || terminal?.name || agent.program?.name || agent.address;
@@ -246,15 +248,19 @@ export default class Agents extends View {
     const color = t[a.status] ?? t.dim;
     if (a.status === "unknown") return div().flex_none().text_size(11).text_color(t.dim)
       .tooltip("Agent is running but has no current status report").child("?");
-    if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
-    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
-    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
+    if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900).tooltip(a.statusDetail || "Working");
+    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().tooltip(a.statusDetail || "Needs you").child("!");
+    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().tooltip(a.statusDetail || "Needs you").child("Needs you");
     // Idle: a ring; done: a dot.
-    if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
+    if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim).tooltip(a.statusDetail || "Idle");
     return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
   }
 
   render(cx) {
+    if (!props()?.sortMenu) {
+      this.claude ??= new ClaudeStatus({ exec, terminals, shared, setShared });
+      this.claude.refresh(cx);
+    }
     this.sessions?.refresh(cx);
     const t = theme();
     if (props()?.sortMenu) return this.sortMenu(t);
@@ -263,6 +269,7 @@ export default class Agents extends View {
     const all = terminals();
     const panelSnapshot = panes();
     let list = includeUnreportedAgents(agents(), all, panelSnapshot, spaces(), this.agentKeys);
+    list = claudeAgents(list, all, shared(CLAUDE_KEY));
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     this.migratePins(all);
     const shown = focused()?.agent;
