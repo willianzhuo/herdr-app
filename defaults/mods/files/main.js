@@ -1,6 +1,6 @@
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
+import { v_flex, h_flex, Editor, EditorState, TextView } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window } from "herdr";
 
 function location() {
@@ -12,6 +12,8 @@ function location() {
 const key = () => JSON.stringify(location());
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
 const PER_FOLDER = 500, TOTAL = 5000;
+const PREVIEW_LIMIT = 400000;
+const markdownFile = path => /\.(md|markdown|mdown|mkd|mkdn|mdwn)$/i.test(path);
 
 async function directory(path, on) {
   const windowsDirectory = async () => {
@@ -43,7 +45,7 @@ export default class Files extends View {
     this.saved = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
-    cx.timer.every(10000, cx => this.refresh(cx));
+    cx.timer.every(10000, cx => { this.refresh(cx); if (this.markdown) this.loadFile(cx); });
   }
 
   watch(root, cx) {
@@ -51,7 +53,7 @@ export default class Files extends View {
     this.watched = root;
     const context = this.context;
     cx.spawn(async cx => {
-      try { while (this.context === context) { await watchFolder(root); if (this.current(context)) this.refresh(cx); } }
+      try { while (this.context === context) { await watchFolder(root); if (this.current(context)) { this.refresh(cx); if (this.markdown) this.loadFile(cx); } } }
       catch { if (this.context === context) this.watched = null; }
     });
   }
@@ -128,22 +130,41 @@ export default class Files extends View {
   }
 
   show(path, cx) {
-    this.code?.release(); this.code = null; this.file = path; this.fileError = null;
-    if (!path || !cx) return;
-    const context = this.context, root = this.root, on = this.on;
+    this.fileRequest = (this.fileRequest ?? 0) + 1;
+    this.code?.release(); this.code = null; this.text = null; this.file = path; this.fileError = null;
+    this.markdown = Boolean(path && markdownFile(path)); this.mode = "preview";
+    this.reading = false; this.truncated = false;
+    if (path && cx) this.loadFile(cx);
+  }
+
+  previewError(message) {
+    this.code?.release(); this.code = null; this.text = null; this.fileError = message;
+  }
+
+  loadFile(cx) {
+    if (!this.file || this.reading) return;
+    const context = this.context, root = this.root, on = this.on, path = this.file;
+    const request = this.fileRequest = (this.fileRequest ?? 0) + 1;
+    const current = () => this.fileRequest === request && this.file === path && this.current(context);
+    this.reading = true;
     cx.spawn(async cx => {
       try {
         const text = await readTextFile(`${root}/${path}`, { on });
-        if (this.file !== path || !this.current(context)) return;
-        if (text === null) { this.fileError = "This file is no longer available"; return; }
-        if (text.includes("\0")) { this.fileError = "Binary file · no text preview"; return; }
-        const t = theme(), ext = path.includes(".") ? path.split(".").pop() : "txt";
-        this.code = EditorState.new({ language: LANG[ext] ?? ext, readonly: true,
-          value: text.length > 400000 ? text.slice(0, 400000) + "\n… (file truncated)" : text,
+        if (!current()) return;
+        if (text === null) { this.previewError("This file is no longer available"); return; }
+        if (text.includes("\0")) { this.previewError("Binary file · no text preview"); return; }
+        const truncated = text.length > PREVIEW_LIMIT;
+        const value = truncated ? text.slice(0, PREVIEW_LIMIT) + "\n… (file truncated)" : text;
+        this.fileError = null; this.truncated = truncated;
+        if (this.text === value && this.code) return;
+        const t = theme(), ext = path.includes(".") ? path.split(".").pop().toLowerCase() : "txt";
+        const code = EditorState.new({ language: this.markdown ? "markdown" : LANG[ext] ?? ext, readonly: true,
+          value,
           font_family: settings().font_family, font_size: 12,
           syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6 } });
-      } catch { if (this.file === path && this.current(context)) this.fileError = "Cannot preview this file (binary, too large, or unreadable)"; }
-      finally { cx.notify(); }
+        this.code?.release(); this.code = code; this.text = value;
+      } catch { if (current()) this.previewError("Cannot preview this file (binary, too large, or unreadable)"); }
+      finally { if (current()) this.reading = false; cx.notify(); }
     });
   }
 
@@ -170,10 +191,19 @@ export default class Files extends View {
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
         .child(div().font_semibold().child("Files"))
-        .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? "")))
+        .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).tooltip(this.file ?? this.root ?? "").child(this.file ?? this.root?.split(/[\\/]/).pop() ?? ""))
+        .when(Boolean(this.file), el => el.child(div().id("files-refresh").w(20).flex_none().text_size(16).cursor_pointer().text_color(t.muted).tooltip("Refresh file")
+          .on_click((_e, cx) => { this.loadFile(cx); cx.notify(); }).child("↻"))))
+      .when(Boolean(this.file) && this.markdown, el => el.child(h_flex().h(34).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
+        .children(["preview", "source"].map(mode => div().id(`files-mode-${mode}`).px(10).py(4).rounded(5).cursor_pointer()
+          .bg(this.mode === mode ? t.hover : "#00000000").text_color(this.mode === mode ? t.foreground : t.dim)
+          .on_click((_e, cx) => { this.mode = mode; cx.notify(); }).child(mode === "preview" ? "Preview" : "Source")))))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.rows("", 0, [], t))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))
-      .when(Boolean(this.file), el => el.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child(this.fileError || "Loading file…")));
+      .when(Boolean(this.file) && this.truncated, el => el.child(div().flex_none().px(12).py(6).text_size(11).text_color(t.dim).child("Large file · preview truncated")))
+      .when(Boolean(this.file), el => el.child(this.markdown && this.mode !== "source" && this.text !== null
+        ? TextView.markdown(`files-markdown-${this.context.key}-${this.file}`, this.text).selectable(true).scrollable(true).flex_1().min_h(0).w_full().p(14)
+        : this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child(this.fileError || "Loading file…")));
   }
 }

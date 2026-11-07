@@ -139,6 +139,26 @@ unreported sessions are mixed. Rows merge in pane order and groups are keyed by
 workspace identity rather than by adjacency. This mod can hot reload without restarting
 any running Claude or Traex session.
 
+## Markdown in Files
+
+The right Files panel renders Markdown by default, including headings, lists,
+quotes, fenced code, tables and links supported by native `TextView`. Preview /
+Source switches to the existing read-only editor using the same bounded content.
+Text is selectable and scrollable. Refresh reloads the selected file; Markdown
+also follows the ten-second Files refresh and local folder notifications.
+Remote Markdown is read through the same machine-aware API as other previews.
+Empty files work, oversized previews are marked as truncated, and removed,
+binary or unreadable files show the existing error state. Stale reads cannot
+replace a newer file, even after closing/reopening the same path.
+
+This is a hot-loadable mod change. Clone the built-in Files mod to a personal
+`files-markdown`, update its `main.js` from `defaults/mods/files/main.js` while
+rewriting its icon paths to `mods/files-markdown/`, and point the active personal
+layout's Files block at the clone. Personal copies survive app restarts and
+updates. Relative images/links are not mapped across SSH; rendered resources
+follow TextView's existing sandbox and HTTP(S) URL policy. No webview, new native
+API, dependency, file write or terminal restart is needed.
+
 ## Branches and remotes
 
 The 2026-11-07 selective sync takes these upstream commits, rather than merging
