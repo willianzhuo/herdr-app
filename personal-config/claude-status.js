@@ -1,7 +1,7 @@
 // Read-only fallback for Claude Agent View sessions, which do not emit OSC 7501.
 // Match the current terminal title exactly; never infer a session from its cwd.
 export const CLAUDE_KEY = "claude.session-status";
-export const CLAUDE_PROBE = String.raw`import json, os, subprocess, sys
+export const CLAUDE_PROBE = String.raw`import json, os, re, subprocess, sys
 from pathlib import Path
 
 PROC_ROOT = Path("/proc")
@@ -34,6 +34,21 @@ def process(item):
 
 def select(rows, item):
     own = title(item.get("title"))
+    if re.fullmatch(r"(?:\d+ awaiting input · )?claude agents", own):
+        # This is a profile-wide dashboard, not one workspace's session.
+        counts = {s:0 for s in ("working", "blocked", "done", "failed", "stopped")}
+        for row in rows:
+            if isinstance(row, dict) and row.get("kind") == "background" and row.get("state") in counts:
+                counts[row["state"]] += 1
+        state = "blocked" if counts["blocked"] else "working" if counts["working"] else "idle"
+        name = "Claude Dashboard"
+        if counts["blocked"]:
+            name += " · " + str(counts["blocked"]) + " need input"
+        elif counts["working"]:
+            name += " · " + str(counts["working"]) + " working"
+        return {"session":"dashboard", "scope":"dashboard", "name":name,
+                "status":state, "counts":counts,
+                "detail":"All background sessions in this Claude profile: " + ", ".join(str(n) + " " + s for s,n in counts.items())}
     matches = [r for r in rows if isinstance(r, dict) and r.get("kind") == "background"
                and r.get("sessionId") and title(r.get("name")) == own]
     if len(matches) != 1:
@@ -94,7 +109,8 @@ export function claudeAgents(rows, all, cache) {
   const records = new Map(all.map(t => [t.address, t]));
   return rows.map(a => {
     const status = claudeStatus(records.get(a.address), a.status, cache);
-    return status === a.status ? a : { ...a, status:status === "done" && a.focused ? "idle" : status };
+    const item = claudeSession(records.get(a.address), cache);
+    return status === a.status ? a : { ...a, status:status === "done" && a.focused ? "idle" : status, statusDetail:item?.detail };
   });
 }
 
@@ -143,7 +159,7 @@ export class ClaudeStatus {
             const t = live.get(item.address), entry = found?.[item.address];
             if (t?.foreground?.pid !== item.pid || t.created_ms !== item.created || t.title !== item.title) continue;
             if (entry?.pid === item.pid && entry.created === item.created && entry.title === item.title
-              && typeof entry.session === "string" && ["working", "blocked", "done"].includes(entry.status))
+              && typeof entry.session === "string" && ["working", "blocked", "done", "idle"].includes(entry.status))
               cache[item.address] = { ...entry, at:Date.now() };
             else delete cache[item.address];
           }

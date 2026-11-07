@@ -139,8 +139,15 @@ supported CLI state API rather than depending on the internal jobs/state files.
 The terminal's current title, after removing its leading status glyph, must
 match exactly one background session name in that profile. It never selects a
 session by cwd, age, a launch-time resume argument, or another panel's title.
-Dashboard/duplicate/unmatched names stay unknown. Matching depends on Claude
+Duplicate/unmatched names stay unknown. Matching depends on Claude
 retaining that session name in the terminal title; no title means no fallback.
+The documented `claude agents` dashboard title (including its awaiting-input
+prefix) instead produces a Claude Dashboard profile-wide summary. It counts
+background states, prioritizes blocked over working, and is idle when neither
+exists. Historical failed/stopped tasks are counted in its tooltip, not treated
+as newly blocked work. The label and tooltip distinguish the dashboard's full
+profile scope from sessions belonging to the containing workspace. Attaching
+to a session replaces the summary with that specific session's state.
 
 The CLI's coarse `state` is authoritative even when its process `status` is idle
 between autonomous steps: working stays working, blocked stays Needs you, done

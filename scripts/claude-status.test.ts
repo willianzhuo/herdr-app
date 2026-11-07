@@ -92,7 +92,17 @@ print(open(os.environ['FIXTURE']).read())
     writeFileSync(fixtures[0],JSON.stringify([...rows("done"),{...rows("blocked")[0],sessionId:"other"}]));
     expect(run()["814/t1"]).toBeUndefined(); // Ambiguous names must stay unknown.
     writeFileSync(fixtures[0],JSON.stringify(rows("done")));expect(run()["814/t1"].status).toBe("done");
-    items[0].title="claude agents";expect(run()["814/t1"]).toBeUndefined();
+    items[0].title="claude agents";expect(run()["814/t1"]).toMatchObject({scope:"dashboard",status:"idle",counts:{done:1}});
+    writeFileSync(fixtures[0],JSON.stringify([
+      ...rows("working"), {...rows("blocked")[0],id:"other",sessionId:"other"},
+      {kind:"interactive",status:"busy",name:"Not a background task"},
+      {...rows("failed")[0],id:"old-failed",sessionId:"old-failed"},
+    ]));
+    items[0].title="1 awaiting input · claude agents";
+    expect(run()["814/t1"]).toMatchObject({scope:"dashboard",status:"blocked",counts:{working:1,blocked:1,failed:1},name:"Claude Dashboard · 1 need input"});
+    items[0].title="◐ Session one"; // Attaching picks one job instead of inheriting dashboard urgency.
+    expect(run()["814/t1"]).toBeUndefined(); // Duplicate names are still ambiguous.
+    writeFileSync(fixtures[0],JSON.stringify(rows("done")));
     items[0].title="Session one";
     writeFileSync(join(proc,"11/environ"),readFileSync(join(proc,"11/environ"),"utf8")+`REPLACE_STAT=${join(proc,"11/stat")}\0`);
     expect(run()["814/t1"]).toBeUndefined();

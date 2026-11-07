@@ -37,7 +37,9 @@ Claude Agent View background sessions use a read-only `claude agents --json --al
 fallback on Linux, through their foreground process's own binary and profile.
 The terminal's current title must match one session name exactly; duplicate or
 unmatched names keep Status unknown. Agents, tab rollups and pane headers refresh
-about every five seconds. This display fallback does not modify native core
+about every five seconds. A Claude Agent View dashboard shows the profile-wide
+working/needs-input summary as Claude Dashboard, with its scope in the tooltip;
+it is not treated as one attached session. This display fallback does not modify native core
 status or notifications, inject input, install hooks or restart any process.
 
 ## Show something when asked

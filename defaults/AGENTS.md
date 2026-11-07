@@ -196,7 +196,11 @@ the highlighted line shows where it will land.
   attached. On Linux machines, `claude-status.js` polls the foreground process's
   own Claude binary/profile with `agents --json --all` about every five seconds.
   It requires one exact session-name match for that terminal's current title;
-  duplicate names, dashboard titles, failures or unsupported machines keep `?`.
+  duplicate names, failures or unsupported machines keep `?`.
+  The explicit `claude agents` dashboard title instead shows a clearly named
+  Claude Dashboard with profile-wide working/needs-input counts. Its tooltip
+  explains that these sessions span the profile, not just the containing space.
+  Waiting takes priority over working; a dashboard with no live work is idle.
   Agents, tab rollups and pane headers use this fallback only without a native
   report. `claude.session-status` is keyed by full address, foreground PID,
   creation time and title, expires after 12 seconds, and is invalidated by a
