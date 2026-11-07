@@ -180,6 +180,53 @@ replace an installed app, or restart running applications.
 
 ## Build and validation
 
+### SSH input-burst compatibility transport
+
+`scripts/ssh-paced.py SSH_TARGET REMOTE_COMMAND` is an optional transparent
+transport for SSH paths that accept small input but stall on larger bursts.
+For example, install the script in a stable local path and pair with
+`hc machine add --name your-machine --via 'python3 /path/ssh-paced.py your-ssh-target'`.
+Only use it when that connection needs it: input is limited to 256-byte pieces
+at 20 ms intervals (about 12.8 KB/s); output is unthrottled and never recorded.
+The existing core supervisor handles reconnects. It is not a hung-RPC watchdog
+and does not restart cores or resume interrupted tasks. An affected SSH path
+was verified with repeated requests and a 12,032-byte binary SHA-256 comparison.
+No personal machine names, SSH credentials or routing settings are shipped.
+
+### Remote shell directory preservation
+
+The optional `personal-config/directory.js` keeps new workspaces in the mapped
+machine directory; new tabs keep the focused terminal's directory, including an
+explicit project/worktree override. Copy `scripts/install-shell-directory.py`
+into the custom app home as `shell-directory-install.py` alongside the machine
+map. Updated directory helpers prepare mapped Unix machines before creating a
+terminal; local machines, Windows mappings and mod-only tabs skip this step.
+
+Preparation installs two marked blocks in the remote user's `.bashrc` and a
+helper at `~/.config/herdr-custom/shell-directory.bash`. A first-original backup
+is kept beside `.bashrc` as `.bashrc.herdr-directory-v1.bak`. Only interactive
+core terminals (`HC_TERMINAL_ID`) capture their requested directory before
+platform startup files and restore it afterward. The exported capture survives
+platform startup scripts that `exec` another Bash. Ordinary SSH shells and
+noninteractive commands retain their existing behavior. Platform-generated
+`.bash_aliases` is never modified, so regenerating it does not remove this fix.
+
+This covers both new terminals and core keep recovery after a machine restart.
+It preserves the directory supplied by core, rather than forcing every shell
+to one global path. Existing running shells/agents are not sent input or moved;
+their directory changes only through their own commands. Agent tasks are never
+automatically resumed. Run the installer on the remote machine with `--remove`
+to remove only its managed blocks/helper; other user configuration is retained.
+
+The fix can hot load into an installed Custom app: update every personal mod's
+`directory.js` copy and the app-home installer, then prepare the affected remote
+machine once. No native executable or core restart is required. Verify with
+`python3 scripts/test_shell_directory.py` and `bun test scripts/directory.test.ts`.
+An isolated Linux core 0.1.18 test verified both fresh terminals and kept-shell
+recovery after stopping the test core and reattaching: the default work folder
+and a different project path containing spaces/apostrophes were retained. Only
+the isolated test terminals were stopped; existing user terminals were untouched.
+
 Use Rust stable and Zig 0.16.0. Initialize the Ghostty submodule before building:
 
 ```sh

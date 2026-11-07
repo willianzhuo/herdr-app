@@ -136,6 +136,11 @@ the highlighted line shows where it will land.
   with the same address; its original command is never run again. Splits
   and mod panes stay. An exited or killed terminal is closed, not restarted.
   Focus, zoom, recent spaces, settled tabs and seen attention stay on this screen.
+  In this fork's optional machine-directory setup, `shell-directory-install.py`
+  in the app home prepares mapped Unix machines before terminal creation. Its
+  user-owned Bash startup guard preserves core's requested cwd through platform
+  initializers and keep recovery. It leaves ordinary SSH and existing processes
+  alone; see `docs/custom-fork.md` for installation and removal.
 - Every terminal is a core terminal. Herdr labels the ones it starts with
   `herdr.space=<id>` and `herdr.tab=<id>`. **A terminal with those
   labels shows up there**, even one you start yourself:
