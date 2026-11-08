@@ -1,6 +1,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, terminals, run, openOverlay, theme, window, shared, setShared, exec, layout, settings } from "herdr";
+import { spaces, panes, terminals, run, openOverlay, theme, window, shared, setShared, exec, layout, settings, appHome } from "herdr";
+
+import { PortsController } from "./ports-controller.js";
 
 import { SessionTitles, sessionTitle, SESSION_KEY } from "./session-titles.js";
 
@@ -36,7 +38,7 @@ function tabWidth() {
 export default class Tabs extends View {
   init(_props, cx) {
     this.sessions = new SessionTitles({ exec, terminals, shared, setShared });
-    cx.timer.every(5000, cx => { this.sessions.refresh(cx); cx.notify(); });
+    cx.timer.every(5000, cx => { this.sessions.refresh(cx); this.ports?.refresh(cx); cx.notify(); });
     this.pressed = null;
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
   }
@@ -88,6 +90,8 @@ export default class Tabs extends View {
   }
 
   render(cx) {
+    this.ports ??= new PortsController({appHome,exec,spaces,terminals,settings,shared,setShared});
+    this.ports.refresh(cx);
     this.sessions?.refresh(cx);
     const t = theme();
     const space = spaces().find(p => p.active);
@@ -131,7 +135,7 @@ export default class Tabs extends View {
       ? Math.max(10, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
       : 10;
     const panel = find(root, "panel"), body = find(root, "panel-body");
-    const enabled = shared("workspace.panels") ?? ["files", "changes"];
+    const enabled = [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "ports"])];
     this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
@@ -153,6 +157,7 @@ export default class Tabs extends View {
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
+      .child(panelButton("ports", "Ports", "mods/ports/port.svg"))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));

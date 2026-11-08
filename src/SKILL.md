@@ -180,3 +180,14 @@ as a new-tab target. Stop propagation on tab items. Gate these calls on
 `shared("pane.dragging")`, which is null outside an app-owned pane gesture.
 The app owns the release, drop preview, async label update and model mutation.
 Do not implement this by closing a pane or restarting its program.
+
+## SSH ports
+
+The tab bar's Ports button opens a right-side view for the selected machine.
+Linux/Python 3 listener discovery follows live Herdr terminal process trees; new
+TCP development ports auto-forward to local 127.0.0.1. The panel has manual port
+entry, a per-machine Auto toggle, Stop/Stop all, browser links and copied local
+addresses. Local collisions use a free port. Owned SSH masters reconnect without
+restarting core or terminals. Custom via routes require an explicit SSH alias;
+this is separate from core's routing. No UDP or public sharing is included.
+The UI calls the bundled Python helper; no native core API changes are required.
