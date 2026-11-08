@@ -180,3 +180,12 @@ as a new-tab target. Stop propagation on tab items. Gate these calls on
 `shared("pane.dragging")`, which is null outside an app-owned pane gesture.
 The app owns the release, drop preview, async label update and model mutation.
 Do not implement this by closing a pane or restarting its program.
+
+## Custom macOS colors
+
+The packaged launcher drops inherited NO_COLOR so automation log preferences
+do not disable interactive agent colors. For a running app/core's new local zsh
+terminals, the optional `scripts/install-interactive-colors.py` guard unsets it
+only in interactive Herdr shells; it keeps a profile backup and supports --remove.
+Running processes retain startup environment. Do not restart them without explicit
+authorization; an approved Codex resume must target the exact saved session ID.

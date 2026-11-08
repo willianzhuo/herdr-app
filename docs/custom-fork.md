@@ -307,3 +307,23 @@ Each updater archive must be named
 `Herdr Custom.app` at its root. Never replace a published build's assets: bump
 the build number. Include the
 architecture, core prerequisite, changes, and signing limitations in its notes.
+
+## Interactive terminal colors
+
+The custom macOS launcher clears inherited `NO_COLOR` before opening the GUI.
+Automation often sets this variable for its own logs; passing it to an interactive
+agent can disable colors even with TERM=xterm-256color and COLORTERM=truecolor.
+
+For local zsh terminals started through an already running app/core, run
+`python3 scripts/install-interactive-colors.py`. It adds a managed block to
+~/.zshrc that unsets NO_COLOR only when HC_TERMINAL_ID is present. Noninteractive
+zsh invocations and shells outside Herdr retain their existing environment.
+The installer preserves file permissions, keeps a first-original backup at
+~/.zshrc.herdr-colors-v1.bak, and supports --remove (managed block only).
+
+The launcher fix applies on the next app launch; the shell guard applies to new
+interactive shells immediately. Existing processes retain their original environment.
+Do not stop active tasks to apply it. An approved idle Codex restart should use
+`env -u NO_COLOR codex resume <exact-session-UUID>` to retain the conversation,
+then verify the foreground process environment and native status. No core restart
+is needed. The script is a local opt-in; packaging does not edit recipients' profiles.

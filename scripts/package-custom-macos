@@ -34,6 +34,9 @@ cp assets/icons/Herdr.icns LICENSE THIRD-PARTY-NOTICES "$app/Contents/Resources/
 cat > "$app/Contents/MacOS/LaunchHerdr" <<'LAUNCH'
 #!/bin/sh
 export HERDR_APP_HOME="${HERDR_APP_HOME:-$HOME/.config/herdr-custom}"
+# Automation may disable color for its own logs; interactive GUI terminals
+# must not inherit that setting from the process which opened the app.
+unset NO_COLOR
 exec "$(dirname "$0")/HerdrCustom" "$@"
 LAUNCH
 chmod 755 "$app/Contents/MacOS/"*
