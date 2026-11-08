@@ -64,12 +64,12 @@ try:
   if rows and rows[0]['state']=='Not forwarded':break
   time.sleep(.3)
  else:raise RuntimeError('Stop failed')
- r=subprocess.run([args.core,'exec','--on',args.machine,'python3','-c','import urllib.request,sys;print(urllib.request.urlopen(sys.argv[1]).read().decode())','http://127.0.0.1:'+str(port)],capture_output=True,text=True,timeout=10)
+ r=subprocess.run(['ssh','-S','none','-o','BatchMode=yes',target,'python3 -c '+shlex.quote('import urllib.request;print(urllib.request.urlopen('+repr('http://127.0.0.1:'+str(port))+').read().decode())')],capture_output=True,text=True,timeout=15)
  assert r.returncode==0 and 'herdr-forward-fixture' in r.stdout,r.stderr
  print('STOPPED_WITH_REMOTE_SERVICE_PRESERVED',flush=True)
 finally:
  if remote and fixture.poll() is None:
-  subprocess.run([args.core,'exec','--on',args.machine,'python3','-c','import urllib.request,sys;urllib.request.urlopen(sys.argv[1]).read()','http://127.0.0.1:'+str(remote['port'])+'/__herdr_shutdown_'+token],capture_output=True,timeout=10)
+  subprocess.run(['ssh','-S','none','-o','BatchMode=yes',target,'python3 -c '+shlex.quote('import urllib.request;urllib.request.urlopen('+repr('http://127.0.0.1:'+str(remote['port'])+'/__herdr_shutdown_'+token)+').read()')],capture_output=True,timeout=15)
  try:p.rpc(root,{'op':'shutdown'})
  except Exception:pass
  if held:held.close()

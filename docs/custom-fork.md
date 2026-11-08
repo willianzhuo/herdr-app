@@ -353,3 +353,8 @@ on 814: automatic discovery, HTTP access through SSH, a conflicting local port,
 an intentionally terminated feature-owned SSH master, reconnect, and stopping a
 mapping while verifying the remote fixture is still alive. Tests never type into
 or restart existing user terminals.
+
+Detached training monitors can register their existing listening PID with
+`defaults/mods/ports/herdr-monitor.py request` and read actual local URLs with `links`.
+See `docs/training-monitor.md` for deployment and the agent workflow. This
+respects Ports Auto/Stop and does not restart training or monitoring services.

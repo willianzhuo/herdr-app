@@ -5,6 +5,13 @@ import {join} from "node:path";
 import {spawnSync} from "node:child_process";
 import {PortsController,PORTS_KEY} from "../defaults/mods/ports/controller.js";
 
+test("detached monitors validate listener ownership, PID reuse and real local URL receipts",()=>{
+  const script=new URL("./test-monitor-registration.py",import.meta.url).pathname;
+  const result=spawnSync("python3",[script],{encoding:"utf8"});
+  expect(result.status,result.stderr).toBe(0);
+  expect(result.stdout).toContain("actual URL acknowledgement passed");
+});
+
 test("Ports batches live remote roots, preserves machine scope and shares one UI polling lease",async()=>{
   const values=new Map<string,any>(),calls:any[]=[],tasks:Promise<any>[]=[];
   const api={appHome:()=>"/tmp/herdr-ports",spaces:()=>[{active:true,machine:"814"}],

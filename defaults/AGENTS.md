@@ -1139,3 +1139,8 @@ stop-all and target for scripts; the helper owns its sockets/processes separatel
 from core. It never sends input to existing terminals. Automatic discovery stops
 after the UI stops refreshing; existing mappings can remain connected. Use Stop
 all or Auto off before leaving if those mappings are no longer wanted.
+
+Detached training monitors can register their existing listening PID with
+`mods/ports/herdr-monitor.py request` and read actual local URLs with `links`.
+See `mods/ports/README.md` under appHome() for deployment and the agent workflow. This
+respects Ports Auto/Stop and does not restart training or monitoring services.

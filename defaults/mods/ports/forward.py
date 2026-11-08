@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import select
 import socket
 import socketserver
 import subprocess
@@ -16,12 +17,30 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 
-# Inspect listeners belonging to this machine's Herdr terminal process trees.
+# Inspect terminal trees plus explicitly registered detached monitoring services.
 # No screen scraping, input, root access or remote installation is involved.
 PROBE = r'''import json, os, socket, sys
 from pathlib import Path
 roots = set(json.loads(sys.argv[1]))
+requests = {}
+try:
+    registry = Path.home()/'.config/herdr-custom/port-forwarding/requests.json'
+    for row in json.loads(registry.read_text()).get('requests',[])[:64]:
+        try:
+            pid=row.get('pid');port=row.get('port');p=Path('/proc')/str(pid)
+            if not isinstance(pid,int) or not isinstance(port,int) or not 1<=port<=65535: continue
+            if p.stat().st_uid!=os.getuid() or (p/'stat').read_text().rsplit(')',1)[1].split()[19]!=row.get('start'): continue
+            sockets=set()
+            for fd in (p/'fd').iterdir():
+                try:
+                    v=os.readlink(fd)
+                    if v.startswith('socket:['): sockets.add(v[8:-1])
+                except OSError: pass
+            requests[port]=(row,sockets)
+        except (OSError,ValueError,TypeError,IndexError,AttributeError): continue
+except (OSError,ValueError,TypeError,IndexError): pass
 procs = {}
 for p in Path('/proc').iterdir():
     if not p.name.isdigit(): continue
@@ -53,18 +72,25 @@ for family,table in [(socket.AF_INET,'tcp'),(socket.AF_INET6,'tcp6')]:
     except OSError: continue
     for line in lines:
         f = line.split()
-        if len(f)<10 or f[3]!='0A' or f[9] not in owners: continue
+        if len(f)<10 or f[3]!='0A': continue
         raw,port = f[1].split(':'); port=int(port,16)
-        if port<1024: continue
+        request=requests.get(port)
+        request=request[0] if request and f[9] in request[1] else None
+        if f[9] not in owners and not request: continue
+        if port<1024 and not request: continue
         if family==socket.AF_INET:
             host=socket.inet_ntop(family,bytes.fromhex(raw)[::-1])
         else:
             raw=bytes.fromhex(raw);host=socket.inet_ntop(family,b''.join(raw[i:i+4][::-1] for i in range(0,16,4)))
         host={'0.0.0.0':'127.0.0.1','::':'::1'}.get(host,host)
-        pid,name=owners[f[9]]
+        pid,name=owners.get(f[9],(request['pid'],str(request.get('label','Monitor'))) if request else (None,None))
         # Prefer IPv4 for a dual-stack service on the same port.
         if port not in ports or family==socket.AF_INET:
             ports[port]={'port':port,'host':host,'pid':pid,'process':name}
+            if request:
+                ports[port].update(label=str(request.get('label',''))[:160],request_id=request.get('id'),
+                    scheme='https' if request.get('scheme')=='https' else 'http',
+                    path=request.get('path','/') if str(request.get('path','/')).startswith('/') else '/')
 print(json.dumps(list(ports.values())[:64]))
 '''
 
@@ -96,10 +122,12 @@ class Manager:
         except (OSError,ValueError): self.config={}
         for k in ('auto','targets','manual','locals'): self.config.setdefault(k,{})
         self.config.setdefault('ignored',[])
+        if not self.config.get('client_id'):
+            self.config['client_id']=uuid.uuid4().hex;atomic_json(self.config_path,self.config)
         self.lock=threading.RLock(); self.active=None; self.pids={}; self.core='hc'
         self.machines={}; self.candidates={}; self.scan_errors={}; self.rows=[]
         self.masters={}; self.forwarded={}; self.errors={}; self.retry={}; self.inventory_at=0
-        self.last_sync=time.monotonic(); self.closed=False
+        self.last_sync=time.monotonic(); self.closed=False; self.scan_retry={}; self.published={}
 
     def request(self, data):
         with self.lock:
@@ -146,11 +174,49 @@ class Manager:
 
     def scan(self, name):
         with self.lock: pids=list(self.pids.get(name,[]))[:256]
-        r=subprocess.run([self.core,'exec','--on',name,'--timeout','6','python3','-c',PROBE,json.dumps(pids)],capture_output=True,text=True,timeout=8)
+        target=self.machines[name]['target']
+        if not target: raise RuntimeError('Set an SSH alias before discovering ports')
+        master=self.master(name,target)
+        if not master or not master['socket'].exists(): raise RuntimeError('SSH is connecting; discovery will retry')
+        # Discovery uses our own SSH connection too: it must not fill core's
+        # transport with repeated requests when a remote core is unresponsive.
+        code='import sys;sys.argv.append('+repr(json.dumps(pids))+')\n'+PROBE
+        r=self.ssh_python(master,code)
         if r.returncode: raise RuntimeError('Port discovery unavailable; existing forwards retained')
         rows=json.loads(r.stdout)
         if not isinstance(rows,list): raise ValueError('Invalid port discovery response')
         return [{**r,'machine':name} for r in rows if isinstance(r,dict) and isinstance(r.get('port'),int)]
+
+    @staticmethod
+    def ssh_python(master, code):
+        # Some SSH gateways stall on large command packets or stdin bursts.
+        # Keep the exec request tiny and pace this feature's own script input.
+        args=['ssh','-S',str(master['socket']),'-o','ControlMaster=no','-o','BatchMode=yes','-T',master['target'],"printf 'HERDR_PORTS_READY\\n'; exec python3 -"]
+        child=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        pipe=child.stdin;child.stdin=None
+        # Wait until the remote channel is open. Pacing before authentication
+        # merely queues a large burst in ssh's local input buffer.
+        if not select.select([child.stdout],[],[],12)[0] or child.stdout.readline()!=b'HERDR_PORTS_READY\n':
+            pipe.close();child.kill();child.wait(timeout=2)
+            child.stdout.close();child.stderr.close()
+            raise subprocess.TimeoutExpired(args,12)
+        def feed():
+            try:
+                data=code.encode()
+                for at in range(0,len(data),256):
+                    pipe.write(data[at:at+256]);pipe.flush();time.sleep(.02)
+            except (BrokenPipeError,OSError): pass
+            finally: pipe.close()
+        writer=threading.Thread(target=feed,daemon=True);writer.start()
+        try: stdout,stderr=child.communicate(timeout=12)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            try: child.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                child.stdout.close();child.stderr.close()
+            raise
+        finally: writer.join(timeout=1)
+        return subprocess.CompletedProcess(args,child.returncode,stdout.decode('utf8',errors='replace'),stderr.decode('utf8',errors='replace'))
 
     def control(self, master, op, spec=None):
         args=['ssh','-S',str(master['socket']),'-o','BatchMode=yes','-O',op]
@@ -212,7 +278,7 @@ class Manager:
             for name,rows in self.candidates.items():
                 if self.config['auto'].get(name,True):
                     for row in rows: desired[f"{name}:{row['port']}"]={**row,'manual':False}
-            desired.update({k:{**r,'manual':True} for k,r in self.config['manual'].items()})
+            desired.update({k:{**desired.get(k,{}),**r,'manual':True} for k,r in self.config['manual'].items()})
             desired={k:r for k,r in desired.items() if k not in self.config['ignored'] and r['machine'] in self.machines}
         for key,row in list(self.forwarded.items()):
             if key not in desired or desired[key]['host']!=row['host']:
@@ -229,7 +295,7 @@ class Manager:
                 try:
                     m=self.master(name,target)
                     if key in self.forwarded and m and m['process'].poll() is None:
-                        row=self.forwarded[key];state='Forwarded'
+                        row={**self.forwarded[key],**row,'local':self.forwarded[key]['local']};self.forwarded[key]=row;state='Forwarded'
                     elif m and m['socket'].exists():
                         preferred=self.config['locals'].get(key,row['port'] if row['port']>=1024 else 0)
                         for _ in range(3):
@@ -246,9 +312,11 @@ class Manager:
                     elif m and m['process'].poll() is not None:
                         state='Reconnecting';error=m['log'].read_text(errors='replace')[-240:]
                 except (OSError,ValueError,subprocess.SubprocessError) as e: state='Error';error=str(e)[-240:]
-            rows.append({**row,'key':key,'state':state,'error':error,'url':f"http://127.0.0.1:{row['local']}" if state=='Forwarded' else None})
+            url=(row.get('scheme','http')+'://127.0.0.1:'+str(row['local'])+row.get('path','/')) if state=='Forwarded' else None
+            rows.append({**row,'key':key,'state':state,'error':error,'url':url})
         for name in list(self.masters):
-            if not any(r['machine']==name for r in desired.values()): self.stop_master(name)
+            watching=name==self.active and time.monotonic()-self.last_sync<20
+            if not watching and not any(r['machine']==name for r in desired.values()): self.stop_master(name)
         # Unforwarded discoveries remain visible for manual forwarding.
         for name,candidates in self.candidates.items():
             for row in candidates:
@@ -256,12 +324,27 @@ class Manager:
                 if key not in desired: rows.append({**row,'key':key,'state':'Not forwarded','manual':False,'url':None})
         with self.lock: self.rows=sorted(rows,key=lambda r:(r['machine'],r['port']))
 
+    def publish(self, name, rows=None):
+        master=self.masters.get(name)
+        if not master or not master['socket'].exists() or master['process'].poll() is not None: return
+        if rows is None: rows=[{k:r.get(k) for k in ('port','local','state','url','label','request_id')} for r in self.rows if r['machine']==name]
+        payload={'client':{'id':self.config['client_id'],'name':socket.gethostname()},'rows':rows}
+        signature=json.dumps(payload,sort_keys=True);previous=self.published.get(name)
+        if previous and previous[0]==signature and time.monotonic()-previous[1]<10: return
+        # A private response file lets the remote agent return the actual local
+        # URL, even when another service already occupied the preferred port.
+        code='''import json,os,tempfile\nfrom pathlib import Path\nd=json.loads(PAYLOAD)\np=Path.home()/'.config/herdr-custom/port-forwarding/clients'\np.mkdir(parents=True,exist_ok=True,mode=0o700)\nwith tempfile.NamedTemporaryFile(dir=p,mode='w',delete=False) as f:\n json.dump(d,f,ensure_ascii=False);s=Path(f.name)\ns.chmod(0o600);s.replace(p/(d['client']['id']+'.json'))\n'''.replace('PAYLOAD',repr(json.dumps(payload)))
+        try:
+            result=self.ssh_python(master,code)
+            if result.returncode==0: self.published[name]=(signature,time.monotonic())
+        except (OSError,subprocess.SubprocessError): pass
+
     def tick(self):
         if time.monotonic()-self.inventory_at>20:
             self.inventory();self.inventory_at=time.monotonic()
         with self.lock:
             names={self.active} | {r['machine'] for r in self.rows if r.get('state')!='Not forwarded'} | {r['machine'] for r in self.config['manual'].values()}
-            names=[n for n in names if n in self.machines and self.machines[n]['state']=='connected']
+            names=[n for n in names if n in self.machines and self.machines[n]['state']=='connected' and time.monotonic()>=self.scan_retry.get(n,0)]
             # A closed GUI must not keep discovering new services from stale PIDs.
             if time.monotonic()-self.last_sync>20: names=[]
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
@@ -269,13 +352,18 @@ class Manager:
             for future,name in futures.items():
                 try:
                     candidates=future.result()
-                    with self.lock: self.candidates[name]=candidates;self.scan_errors.pop(name,None)
+                    with self.lock: self.candidates[name]=candidates;self.scan_errors.pop(name,None);self.scan_retry.pop(name,None)
                 except Exception as e:
-                    with self.lock: self.scan_errors[name]=str(e)
+                    message='Port discovery timed out; retrying shortly' if isinstance(e,subprocess.TimeoutExpired) else str(e)[:240]
+                    with self.lock:
+                        self.scan_errors[name]=message
+                        self.scan_retry[name]=time.monotonic()+(1 if 'SSH is connecting' in message else 30)
         self.reconcile()
+        for name in list(self.masters): self.publish(name)
 
     def close(self):
-        for name in list(self.masters): self.stop_master(name)
+        for name in list(self.masters):
+            self.publish(name,[]);self.stop_master(name)
 
 
 def runtime_dir(home):

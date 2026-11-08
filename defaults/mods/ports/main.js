@@ -43,7 +43,7 @@ export default class Ports extends View {
         .when(Boolean(issue),el=>el.child(note(issue)))
         .child(v_flex().id("ports-list").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(7).children(rows.map(row=>v_flex().id(`port-${row.key}`).p(9).gap(5).rounded(7).border_1().border_color(t.border)
           .child(h_flex().gap(7).items_center().child(div().font_semibold().child(String(row.port)))
-            .child(div().flex_1().truncate().text_color(t.dim).child(row.process||"Manual"))
+            .child(div().flex_1().truncate().text_color(t.dim).child(row.label||row.process||"Manual"))
             .child(div().text_color(row.state==="Forwarded"?t.done:t.dim).tooltip(row.error||row.state).child(row.state)))
           .when(Boolean(row.url),el=>el.child(div().cursor_pointer().text_color(t.accent).tooltip("Open in browser").on_click((_e,cx)=>cx.open_url(row.url)).child(row.url)))
           .child(h_flex().child(button(`port-action-${row.key}`,row.state==="Not forwarded"?"Forward":"Stop",(_e,cx)=>this.controller.send(row.state==="Not forwarded"?"forward":"stop",{machine,port:row.port},cx)))
