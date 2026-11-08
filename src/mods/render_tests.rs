@@ -177,6 +177,20 @@ fn module(values: BTreeMap<String, Value>, calls: Rc<RefCell<Calls>>) -> HostMod
                     Some(json!({"code":0,"stdout":"d\u{0}src\u{0}f\u{0}README.md\u{0}","stderr":""}))
                 }
                 "exec"
+                    if first == "python3"
+                        && a.get(1).map(from_host).and_then(|v| {
+                            let args = v.as_array()?;
+                            (args.len() == 4
+                                && args[0] == "/fixture/app/mods/ports/forward.py"
+                                && args[1] == "rpc"
+                                && args[2] == "/fixture/app")
+                                .then(|| args[3].as_str().and_then(|s| serde_json::from_str::<Value>(s).ok()))
+                                .flatten()
+                        }).is_some_and(|payload| payload["op"] == "sync") =>
+                {
+                    Some(json!({"code":0,"stdout":"{\"machines\":[],\"rows\":[],\"auto\":{},\"scanErrors\":{}}","stderr":""}))
+                }
+                "exec"
                     if first == "git"
                         && [
                             json!(["rev-parse", "--show-toplevel"]),

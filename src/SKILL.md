@@ -202,3 +202,19 @@ terminals, the optional `scripts/install-interactive-colors.py` guard unsets it
 only in interactive Herdr shells; it keeps a profile backup and supports --remove.
 Running processes retain startup environment. Do not restart them without explicit
 authorization; an approved Codex resume must target the exact saved session ID.
+
+## SSH ports
+
+The tab bar's Ports button opens a right-side view for the selected machine.
+Linux/Python 3 listener discovery follows live Herdr terminal process trees; new
+TCP development ports auto-forward to local 127.0.0.1. The panel has manual port
+entry, a per-machine Auto toggle, Stop/Stop all, browser links and copied local
+addresses. Local collisions use a free port. Owned SSH masters reconnect without
+restarting core or terminals. Custom via routes require an explicit SSH alias;
+this is separate from core's routing. No UDP or public sharing is included.
+The UI calls the bundled Python helper; no native core API changes are required.
+
+Detached training monitors can register their existing listening PID with
+`mods/ports/herdr-monitor.py request` and read actual local URLs with `links`.
+See `mods/ports/README.md` under appHome() for deployment and the agent workflow. This
+respects Ports Auto/Stop and does not restart training or monitoring services.

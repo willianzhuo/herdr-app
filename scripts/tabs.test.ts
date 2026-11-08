@@ -4,6 +4,8 @@ import { sessionTitle, SESSION_KEY } from "../defaults/mods/agents/session-title
 
 import { ClaudeStatus, claudeSession, claudeTabStatus, CLAUDE_KEY } from "../defaults/mods/agents/claude-status.js";
 
+import { PortsController } from "../defaults/mods/ports/controller.js";
+
 for (const file of ["defaults/mods/tabs/main.js", "personal-config/tabs-copy-main.js"]) {
   const source = (await readFile(new URL(`../${file}`, import.meta.url), "utf8"))
     .replace(/^import .*;\n/gm, "").replace("export default class Tabs", "class Tabs");
@@ -96,7 +98,7 @@ function widthHarness(source: string, settingsSource: string) {
     setShared: (key: string, value: unknown) => preferences.set(key, value),
     spaces: () => [{ id: "space", active: true, tabs }], panes: () => panels, terminals: () => [],
     settings: () => ({ zoom: 1 }), theme: () => ({}), layout: () => ({}), window: () => ({ platform: "macos" }),
-    run: () => {}, openOverlay: () => {}, sessionTitle, SESSION_KEY, ClaudeStatus, claudeSession, claudeTabStatus, CLAUDE_KEY, exec: async () => ({code:1}),
+    run: () => {}, openOverlay: () => {}, sessionTitle, SESSION_KEY, ClaudeStatus, claudeSession, claudeTabStatus, CLAUDE_KEY, PortsController, appHome:()=>"/tmp/herdr-ports-test", exec: async () => ({code:1}),
   };
   const load = (code: string, name: string) => new Function(...Object.keys(globals), `${code}; return ${name};`)(...Object.values(globals));
   const Tabs = load(source, "Tabs"), Settings = load(settingsSource, "Settings");

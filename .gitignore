@@ -5,3 +5,8 @@
 
 # Local build report contains machine-specific paths.
 /BUILD-NOTES.txt
+
+# Generated locally by `herdr-app check <mod>`.
+/defaults/mods/**/gpui-kit.d.ts
+/defaults/mods/**/jsconfig.json
+/defaults/mods/**/__pycache__/

@@ -160,6 +160,13 @@
                       "content": {
                         "mod": "changes"
                       }
+                    },
+                    {
+                      "id": "ports",
+                      "type": "block",
+                      "content": {
+                        "mod": "ports"
+                      }
                     }
                   ]
                 }
