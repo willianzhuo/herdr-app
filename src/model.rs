@@ -1032,4 +1032,23 @@ mod tests {
         assert_eq!(m.tab_of("x1").unwrap().id, "c1");
     }
 
+    #[test]
+    fn file_panes_keep_props_and_identity_when_split_detached_and_merged() {
+        use crate::layout::{Content, Edge};
+        let mut m = model_with_one();
+        let props = serde_json::json!({"path":"/project/docs/Guide.md","on":"remote","title":"Guide.md","folder":"/project/docs"});
+        let content = Content::Mod { name:"file-panel".into(), props };
+        assert!(m.split_with("x1", Axis::Row, Node::block("file", content.clone())));
+        assert!(m.move_pane("file", "x1", Some(Edge::Bottom)));
+        assert!(m.relocate_pane("file", None, "file-tab", Edge::Right));
+        assert_eq!(m.tab_of("file").unwrap().id, "file-tab");
+        assert_eq!(m.tab_of("file").unwrap().root.find("file").unwrap().content(), Some(&content));
+        assert_eq!(m.address_of("file"), None);
+        assert!(m.relocate_pane("file", Some("x1"), "unused", Edge::Left));
+        assert!(m.tab("file-tab").is_none());
+        assert_eq!(m.tab_of("file").unwrap().root.find("file").unwrap().content(), Some(&content));
+        assert_eq!(m.pane_of("t1").as_deref(), Some("x1"));
+        assert_eq!(m.focused_pane().as_deref(), Some("file"));
+    }
+
 }
