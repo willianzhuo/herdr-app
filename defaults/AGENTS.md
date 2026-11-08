@@ -1144,3 +1144,13 @@ as a new-tab target. Stop propagation on tab items. Gate these calls on
 `shared("pane.dragging")`, which is null outside an app-owned pane gesture.
 The app owns the release, drop preview, async label update and model mutation.
 Do not implement this by closing a pane or restarting its program.
+
+## Custom macOS terminal colors
+
+LaunchHerdr removes inherited NO_COLOR before starting the GUI. A local zsh
+installation can additionally use the repository helper
+`scripts/install-interactive-colors.py` to clear it in new interactive Herdr
+shells (HC_TERMINAL_ID set); noninteractive scripts keep their environment.
+Existing processes require a separately approved restart to change startup
+environment. Resume the exact Codex session ID when preserving a conversation;
+do not stop tasks or restart the shared core for a color preference.
