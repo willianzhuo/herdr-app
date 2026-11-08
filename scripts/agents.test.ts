@@ -2,6 +2,8 @@ import { test, expect } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { SessionTitles, sessionTitle, SESSION_KEY } from "../defaults/mods/agents/session-titles.js";
 
+import { ClaudeStatus, claudeSession, claudeAgents, CLAUDE_KEY } from "../defaults/mods/agents/claude-status.js";
+
 const source = (await readFile(new URL("../defaults/mods/agents/main.js", import.meta.url), "utf8"))
   .replace(/^import .*;\n/gm, "").replace("export default class Agents", "class Agents");
 
@@ -10,7 +12,7 @@ function harness(pins: string[], globals: Record<string, unknown> = {}) {
   const writes: unknown[] = [];
   const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => data.set(k, v), removeItem: (k: string) => data.delete(k) };
   const tasks: Promise<unknown>[] = [];
-  globals = { SessionTitles, sessionTitle, SESSION_KEY, exec: async () => ({code:1}), terminals: () => [], shared: () => null, setShared: () => {}, knownAgents: async () => [], spaces: () => [], ...globals };
+  globals = { ClaudeStatus, claudeSession, claudeAgents, CLAUDE_KEY, SessionTitles, sessionTitle, SESSION_KEY, exec: async () => ({code:1}), terminals: () => [], shared: () => null, setShared: () => {}, knownAgents: async () => [], spaces: () => [], ...globals };
   const Agents = new Function("View", "localStorage", "props", "run", ...Object.keys(globals), `${source}; return Agents;`)(
     class {}, storage, () => ({}), (...args: unknown[]) => writes.push(args),
     ...Object.values(globals),
@@ -53,7 +55,7 @@ test("already shared pins need no write and pending writes survive restart", () 
 });
 
 test("agent names come from their own session, never a tab label", () => {
-  const title = new Function("View", "sessionTitle", "SESSION_KEY", "shared", `${source}; return agentTitle;`)(class {}, sessionTitle, SESSION_KEY, () => null);
+  const title = new Function("View", "claudeSession", "CLAUDE_KEY", "sessionTitle", "SESSION_KEY", "shared", `${source}; return agentTitle;`)(class {}, claudeSession, CLAUDE_KEY, sessionTitle, SESSION_KEY, () => null);
   const agent = { address: "200/t2", title: "Own terminal title", program: { name: "Codex" } };
   expect(title(agent, { title: "Own panel title" }, { report: { title: "Own session" } })).toBe("Own session");
   expect(title(agent, { title: "Own panel title" }, {})).toBe("Own panel title");
@@ -263,6 +265,6 @@ for (const sort of ["priority", "grouped"]) test(`${sort}: a kept sub-agent keep
 test("Traex sidebar uses the exact terminal's resolved session, independent of its sibling panel", () => {
   const program={key:"traex",name:"Traex"}, terminal={address:"200/t1",state:"live",program,created_ms:123,foreground:{pid:11}};
   const cache={"200/t1":{pid:11,created:123,name:"Own session",at:Date.now()},"200/t2":{pid:12,created:123,name:"Sibling session",at:Date.now()}};
-  const title=new Function("View","sessionTitle","SESSION_KEY","shared",`${source}; return agentTitle;`)(class {},sessionTitle,SESSION_KEY,()=>cache);
+  const title=new Function("View","claudeSession","CLAUDE_KEY","sessionTitle","SESSION_KEY","shared",`${source}; return agentTitle;`)(class {},claudeSession,CLAUDE_KEY,sessionTitle,SESSION_KEY,()=>cache);
   expect(title({address:"200/t1",program,title:"work"},{title:"work"},terminal)).toBe("Own session");
 });
