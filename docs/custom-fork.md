@@ -454,3 +454,6 @@ Detached training monitors can register their existing listening PID with
 `defaults/mods/ports/herdr-monitor.py request` and read actual local URLs with `links`.
 See `docs/training-monitor.md` for deployment and the agent workflow. This
 respects Ports Auto/Stop and does not restart training or monitoring services.
+
+Older personal layouts without a Ports slot open the panel in a dialog when
+the updated tab bar button is clicked. Their saved layout is not rewritten.

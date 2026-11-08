@@ -142,13 +142,17 @@ export default class Tabs extends View {
       : 10;
     const panel = find(root, "panel"), body = find(root, "panel-body");
     const enabled = [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "ports"])];
-    this.syncPanel(space, panel, body, enabled);
+    this.syncPanel(space, panel, body, enabled.filter(id => id !== "ports" || find(body, "ports")));
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
       return h_flex().id(`panel-${id}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
         .text_size(12).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
         .hover(s => s.bg(t.hover)).on_mouse_down("left", stop)
         .on_click(() => {
+          if (id === "ports" && !find(body, "ports")) {
+            openOverlay({ mod: "ports", kind: "dialog", width: 440, height: 560, props: { machine: space?.machine ?? null } });
+            return;
+          }
           if (on) run("layout.hide", { id: "panel" });
           else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
         }).child(svg(icon).size(14)).child(label);

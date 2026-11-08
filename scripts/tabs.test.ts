@@ -90,19 +90,22 @@ function widthHarness(source: string, settingsSource: string) {
     { id: "a", name: "1", named: false, active: true, status: "idle" },
     { id: "b", name: "Other", named: true, active: false, status: "idle" },
   ];
+  let currentLayout:any = {}, machine:any = undefined;
+  const commands:any[] = [], overlays:any[] = [];
   const globals = {
     View: class {}, div: () => element("div"), h_flex: () => element("row"), v_flex: () => element("column"),
     svg: () => element("svg"), image: () => element("image"),
     localStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) },
     shared: (key: string) => preferences.get(key) ?? null,
     setShared: (key: string, value: unknown) => preferences.set(key, value),
-    spaces: () => [{ id: "space", active: true, tabs }], panes: () => panels, terminals: () => [],
-    settings: () => ({ zoom: 1 }), theme: () => ({}), layout: () => ({}), window: () => ({ platform: "macos" }),
-    run: () => {}, openOverlay: () => {}, sessionTitle, SESSION_KEY, ClaudeStatus, claudeSession, claudeTabStatus, CLAUDE_KEY, PortsController, appHome:()=>"/tmp/herdr-ports-test", exec: async () => ({code:1}),
+    spaces: () => [{ id: "space", active: true, tabs, machine }], panes: () => panels, terminals: () => [],
+    settings: () => ({ zoom: 1 }), theme: () => ({}), layout: () => currentLayout, window: () => ({ platform: "macos" }),
+    run: (...args:any[]) => commands.push(args), openOverlay: (args:any) => overlays.push(args), sessionTitle, SESSION_KEY, ClaudeStatus, claudeSession, claudeTabStatus, CLAUDE_KEY, PortsController, appHome:()=>"/tmp/herdr-ports-test", exec: async () => ({code:1}),
   };
   const load = (code: string, name: string) => new Function(...Object.keys(globals), `${code}; return ${name};`)(...Object.values(globals));
   const Tabs = load(source, "Tabs"), Settings = load(settingsSource, "Settings");
   const view = new Tabs(), settingsView = new Settings();
+  view.panels = {};
   const find = (node: any, id: string): any => {
     if (!node || typeof node !== "object") return null;
     if (node.calls.get("id")?.[0] === id) return node;
@@ -114,7 +117,7 @@ function widthHarness(source: string, settingsSource: string) {
   };
   const click = (id: string) => find(settingsView.tabWidthControl({}), id).calls.get("on_click")[0]();
   const render = () => find(view.render(), "tab-a");
-  return { preferences, panels, tabs, find, click, render, Settings };
+  return { preferences, panels, tabs, find, click, render, Settings, commands, overlays, renderAll:()=>view.render(), setLayout:(value:any)=>{currentLayout=value;}, setMachine:(value:any)=>{machine=value;} };
 }
 
 const settingsSource = (await readFile(new URL("../defaults/frame/settings/main.js", import.meta.url), "utf8"))
@@ -123,6 +126,22 @@ const settingsSource = (await readFile(new URL("../defaults/frame/settings/main.
 for (const file of ["defaults/mods/tabs/main.js", "personal-config/tabs-copy-main.js"]) {
   const source = (await readFile(new URL(`../${file}`, import.meta.url), "utf8"))
     .replace(/^import .*;\n/gm, "").replace("export default class Tabs", "class Tabs");
+
+  test(`${file}: Ports opens on old personal layouts without replacing them`, () => {
+    const h = widthHarness(source, settingsSource);
+    h.setMachine("200");
+    const body:any = {id:"panel-body", active:"files", children:[{id:"files"}]};
+    const root:any = {id:"root", children:[{id:"panel", hidden:false, children:[body]}]};
+    h.setLayout(root);
+    h.find(h.renderAll(), "panel-ports").calls.get("on_click")[0]();
+    expect(h.overlays).toEqual([{mod:"ports",kind:"dialog",width:440,height:560,props:{machine:"200"}}]);
+    expect(h.commands).toEqual([]);
+    expect(body.children).toEqual([{id:"files"}]);
+    body.children.push({id:"ports"});
+    h.find(h.renderAll(), "panel-ports").calls.get("on_click")[0]();
+    expect(h.overlays).toHaveLength(1);
+    expect(h.commands).toEqual([["layout.select",{stack:"panel-body",child:"ports"}],["layout.show",{id:"panel"}]]);
+  });
 
   test(`${file}: settings changes take effect in tab rendering and respect width limits`, () => {
     const h = widthHarness(source, settingsSource);

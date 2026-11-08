@@ -9,6 +9,7 @@
 - Selected upstream improvements add pane swapping, preserve layouts during transient reconnect failures, and improve terminal startup and modal keyboard handling. (#2, thanks @willianzhuo)
 
 ### Fixed
+- Ports opens in a dialog when an older personal layout has no Ports slot, preserving the saved layout. (#6, thanks @willianzhuo)
 - Claude Code background sessions and its Agent Dashboard retain their presence and display their own session or dashboard status. (#4, thanks @willianzhuo)
 - Interactive terminals no longer inherit an automation launcher's NO_COLOR setting; existing shells can use the optional color guard. (#5, thanks @willianzhuo)
 
