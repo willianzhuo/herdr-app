@@ -13,6 +13,13 @@ fn walk(dir: &Path, base: &Path, root: &Path, out: &mut Vec<String>) {
     let mut entries: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path()).collect();
     entries.sort();
     for p in entries {
+        // Native mod checks and Python probes leave local metadata in the
+        // checkout. Validation must not change the assets shipped in a release.
+        if matches!(p.file_name().and_then(|name| name.to_str()), Some("gpui-kit.d.ts" | "jsconfig.json" | "__pycache__"))
+            || p.extension().is_some_and(|ext| ext == "pyc")
+        {
+            continue;
+        }
         if p.is_dir() {
             walk(&p, base, root, out);
         } else {
