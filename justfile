@@ -44,8 +44,7 @@ build:
 
 test:
     python3 scripts/test_shell_directory.py
-    bun test scripts/directory.test.ts
-    bun test scripts/files.test.ts scripts/picker.test.ts scripts/palette.test.ts scripts/agents.test.ts scripts/tabs.test.ts scripts/spaces.test.ts scripts/worktree.test.ts
+    bun test scripts/*.test.ts
     cargo test --locked
 
 docs-generate: build

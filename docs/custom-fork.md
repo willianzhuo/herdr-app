@@ -361,7 +361,7 @@ an externally supplied binary must have been built with that exact value.
 The packager stages only the executable, icon, licenses, generic launcher, build
 metadata and installation guide. It never copies an installed app's preferences.
 The recipient uses their own `~/.config/herdr-custom`; herdr-core must be installed
-separately (minimum 0.1.11, tested with 0.1.18). Existing core state can be shared
+separately (minimum 0.1.11, tested with 0.1.18 and 0.1.19). Existing core state can be shared
 with the official app. This preview is ad-hoc signed, not Apple notarized; macOS
 may block opening it. It has only been runtime-tested on macOS 26.6.2 arm64.
 
@@ -374,6 +374,15 @@ Each updater archive must be named
 `Herdr Custom.app` at its root. Never replace a published build's assets: bump
 the build number. Include the
 architecture, core prerequisite, changes, and signing limitations in its notes.
+
+`custom-v0.1.13.11` consolidates PRs #2–#6 on the maintained `custom` branch.
+It includes the original custom drag implementation, Markdown/file panels,
+Claude background-session status, launcher color handling and Ports/monitor
+registration. Local validation runs the full JavaScript suite, native tests and
+renderer pixel checks; packaging validates both the DMG and updater archive.
+Core remains separately installed and updated. On macOS, granting ordinary
+folder write access is insufficient when App Management blocks Custom from
+modifying the independently signed Herdr Core.app.
 
 ## Interactive terminal colors
 

@@ -407,6 +407,14 @@ mod tests {
         assert_eq!(notes[1].items[0].detail, "Another thing");
         assert!(notes[1].items[0].headline.is_empty());
         assert!(!notes[1].items[0].fixed);
-        assert_eq!(parse(include_str!("../CHANGELOG.md"))[0].version, env!("CARGO_PKG_VERSION"));
+        let shipped = parse(include_str!("../CHANGELOG.md"));
+        // Custom revisions precede the upstream notes while Cargo retains the
+        // upstream base version. Packaged builds must still name their exact revision.
+        let current = if option_env!("HERDR_CUSTOM_VERSION").is_some() {
+            &shipped[0]
+        } else {
+            shipped.iter().find(|note| note.version.split('.').count() == 3).unwrap()
+        };
+        assert_eq!(current.version, crate::update::VERSION);
     }
 }

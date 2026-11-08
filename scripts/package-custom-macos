@@ -101,10 +101,25 @@ Files renders Markdown with a read-only Source toggle. Open a file and choose
 Panel or New tab, then use its top-center grip to move it like a terminal pane.
 File panes retain their path and machine across moves and app restarts.
 
+Ports 支持 SSH 开发端口自动发现、手动转发、端口冲突分配和重连。
+停止转发不会停止远端服务。后台训练监控可通过随包提供的
+mods/ports/herdr-monitor.py 登记服务并向 Agent 返回实际本机 URL；
+部署方法见 App 配置目录中的 mods/ports/README.md。
+Ports supports SSH listener discovery, manual forwarding, local port conflict
+allocation and reconnects. Stopping a mapping leaves the remote service running.
+The packaged monitor helper lets agents register detached services and retrieve
+actual local URLs; see mods/ports/README.md in the app configuration directory.
+Claude Code 后台 Session 和 Agent Dashboard 支持独立状态显示。
+Claude Code background sessions and its Agent Dashboard show their own status.
+
 仅支持 Apple Silicon。herdr-core 需要单独安装（最低 0.1.11，已测试
-0.1.18），首次打开可按提示安装。
+0.1.18 / 0.1.19），首次打开可按提示安装。
 Apple Silicon only. Install herdr-core separately (minimum 0.1.11; tested with
-0.1.18). The first-run screen offers installation.
+0.1.18 / 0.1.19). The first-run screen offers installation.
+macOS 可能要求为 Herdr Custom 授予“App 管理”权限，才允许它更新
+独立的 Herdr Core.app；普通文件夹写权限不能替代此系统授权。
+macOS may require App Management permission before Custom can update the
+separate Herdr Core.app. Ordinary folder write access does not grant it.
 
 这是第三方 fork 的预览包，使用 ad-hoc 签名，尚未经过 Apple 公证。
 macOS 可能阻止首次打开。仅在确认来源可信后，在系统设置 → 隐私与安全性

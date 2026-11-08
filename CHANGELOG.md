@@ -1,5 +1,17 @@
 # Herdr changelog
 
+## [0.1.13.11] - 2026-11-09
+<!-- spotlight macos -->
+
+### New
+- **Markdown previews and movable file panels.** Open a text file beside a terminal or in its own tab; move it between tabs while preserving its path and machine. (#3, thanks @willianzhuo)
+- **Automatic SSH port forwarding.** The Ports panel discovers development services, handles local port conflicts, reconnects, and stops mappings without stopping remote programs. Detached training monitors can register their service and return the actual local dashboard URL to an agent. (#6, thanks @willianzhuo)
+- Selected upstream improvements add pane swapping, preserve layouts during transient reconnect failures, and improve terminal startup and modal keyboard handling. (#2, thanks @willianzhuo)
+
+### Fixed
+- Claude Code background sessions and its Agent Dashboard retain their presence and display their own session or dashboard status. (#4, thanks @willianzhuo)
+- Interactive terminals no longer inherit an automation launcher's NO_COLOR setting; existing shells can use the optional color guard. (#5, thanks @willianzhuo)
+
 ## [0.1.13] - 2026-11-04
 <!-- spotlight macos -->
 

@@ -63,9 +63,13 @@ version=$(tr -d '\n ' < "$tmp/latest.json" | sed -n 's/^{"version":"\([^"]*\)".*
 # use are marked: one with a query or fragment (a mirror's signed URL) is
 # fetched exactly as the manifest gives it.
 src=install
-for have in "${XDG_DATA_HOME:-$HOME/.local/share}/herdr-app" "$HOME/Applications/Herdr.app" /Applications/Herdr.app; do
-  if [ -e "$have" ]; then src=reinstall; fi
-done
+if [ "$os" = linux ]; then
+  if [ -e "${XDG_DATA_HOME:-$HOME/.local/share}/herdr-app" ]; then src=reinstall; fi
+else
+  for have in "$HOME/Applications/Herdr.app" /Applications/Herdr.app; do
+    if [ -e "$have" ]; then src=reinstall; fi
+  done
+fi
 case $url in
   *[?#]*) download=$url ;;
   "$releases"/*) download="$url?src=$src" ;;
