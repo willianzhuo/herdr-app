@@ -394,3 +394,54 @@ Do not stop active tasks to apply it. An approved idle Codex restart should use
 `env -u NO_COLOR codex resume <exact-session-UUID>` to retain the conversation,
 then verify the foreground process environment and native status. No core restart
 is needed. The script is a local opt-in; packaging does not edit recipients' profiles.
+
+## Automatic SSH port forwarding
+
+The right-side Ports view follows the active workspace's machine. Its controller
+in the tab bar keeps discovery running when the Ports view is closed. A private
+Python stdlib helper owns one dedicated OpenSSH master for each machine with
+active mappings; core connections and terminal processes are never reused for
+tunnel lifecycle management or stopped. No native core API, Rust dependency,
+remote server installation or public tunnel service is added.
+
+Linux remote discovery reads /proc TCP listeners belonging to the live Herdr
+terminal process trees of that user. It excludes agent/core/SSH transport processes
+and privileged ports from automatic discovery, caps each scan at 64 listeners,
+and scans only the active machine and machines with existing mappings. Manual
+forwarding supports TCP ports 1–65535, including services outside terminal trees.
+Discovery errors retain existing mappings. A stopped automatic port is persisted
+as ignored; explicit Forward enables it again. Auto off stops automatic mappings
+without removing manually requested ones. Stop all affects only this feature's
+mappings on the selected machine, never remote services.
+
+All local endpoints bind 127.0.0.1. IPv4/IPv6 remote addresses are supported.
+OpenSSH reads the user's existing config, authentication and host-key policy.
+Local port conflicts fall back to an ephemeral port; a remembered local address
+is preferred after reconnect, including sockets in TIME_WAIT. Browser links use
+HTTP; Copy address works for other TCP clients. Forwarding has the same protocol
+and authentication requirements as the original service.
+
+Preferences are per app home in port-forwarding/config.json (auto, ignored,
+manual, targets and remembered local ports), written atomically with mode 0600.
+The control endpoint is a private Unix socket in a short /tmp directory, with a
+per-home lock; short paths avoid macOS OpenSSH's socket length limit. Discovery
+uses a five-second cycle while the UI refreshes, and stops using stale root PIDs
+when UI heartbeats stop. Existing SSH mappings can outlive a closed GUI.
+
+Non-SSH `via` commands cannot supply SSH forwarding themselves. Set an explicit
+SSH alias in Ports when the same machine is also reachable through SSH. For the
+local user's machine 200, target 200 is configured separately; its paced core
+transport remains unchanged. Initial support is macOS/Linux local clients and
+Linux/Python 3 discovery; other SSH targets can use manual ports. UDP, automatic
+terminal-output URL detection and public sharing are outside this implementation.
+
+Validation includes policy/ownership tests and a real independent HTTP fixture
+on 814: automatic discovery, HTTP access through SSH, a conflicting local port,
+an intentionally terminated feature-owned SSH master, reconnect, and stopping a
+mapping while verifying the remote fixture is still alive. Tests never type into
+or restart existing user terminals.
+
+Detached training monitors can register their existing listening PID with
+`defaults/mods/ports/herdr-monitor.py request` and read actual local URLs with `links`.
+See `docs/training-monitor.md` for deployment and the agent workflow. This
+respects Ports Auto/Stop and does not restart training or monitoring services.

@@ -224,8 +224,8 @@ through them, `layout.switch {name}` picks one; `shared("layout")` is the
 shown one's name. Herdr ships `main` ("Herdr": spaces by machine and the
 agents list on the left, `workspace-chrome`; tabs as pills with a + menu
 that starts a terminal or any installed agent, `new-menu`; panes as cards
-with a header; Files and Changes panels on the right, `files` and
-`changes`, opened from the tab bar and remembered per space (which ones:
+with a header; Files, Changes and Ports panels on the right, `files`,
+`changes` and `ports`, opened from the tab bar and remembered per space (which ones:
 shared `"workspace.panels"`, set by the welcome); a status bar,
 `workspace-status`), and as examples `terminals` ("Terminals": tabs in
 the title bar, panes as cards, a space picker) and `win98`
@@ -1154,3 +1154,33 @@ shells (HC_TERMINAL_ID set); noninteractive scripts keep their environment.
 Existing processes require a separately approved restart to change startup
 environment. Resume the exact Codex session ID when preserving a conversation;
 do not stop tasks or restart the shared core for a color preference.
+
+## Automatic SSH port forwarding
+
+Ports opens from the tab bar into the right panel and follows the selected
+workspace's machine. On Linux remotes with Python 3, it discovers TCP listeners
+(port 1024 and above) in the user's live Herdr terminal process trees, excluding
+SSH/core/agent transport processes. Automatic forwarding is on per machine by
+default; turn Auto off, stop one mapping, or Stop all on that machine. A stopped
+automatic port stays ignored until explicitly forwarded again. Other services
+can be added manually by remote TCP port (1–65535).
+
+The local Python helper uses one owned OpenSSH master per machine with active
+forwards, respects SSH config authentication/host-key settings, and binds local
+listeners only to 127.0.0.1. Local conflicts receive a free port; reconnects reuse
+the assigned address when available. Click the HTTP URL to open the browser or
+Copy address for a non-HTTP client. Stopping a mapping never stops its service.
+Custom `--via` routes need an explicit SSH alias in Ports; this does not replace
+the core's transport. Non-SSH transports and UDP are not handled.
+
+UI/SSH preferences persist in `port-forwarding/config.json` under appHome().
+`mods/ports/forward.py rpc <appHome> '<JSON>'` exposes status, auto, forward, stop,
+stop-all and target for scripts; the helper owns its sockets/processes separately
+from core. It never sends input to existing terminals. Automatic discovery stops
+after the UI stops refreshing; existing mappings can remain connected. Use Stop
+all or Auto off before leaving if those mappings are no longer wanted.
+
+Detached training monitors can register their existing listening PID with
+`mods/ports/herdr-monitor.py request` and read actual local URLs with `links`.
+See `mods/ports/README.md` under appHome() for deployment and the agent workflow. This
+respects Ports Auto/Stop and does not restart training or monitoring services.
