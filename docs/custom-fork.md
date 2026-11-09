@@ -254,6 +254,14 @@ The Spaces machine headings show remote response time in `ms`, refreshed every
 existing core route (including a configured `--via` adapter), executing only
 `true` outside any terminal with a five-second bound. Values include core
 dispatch and remote process startup; they are not ICMP ping measurements.
+Click any latency badge or the settings icon in the Spaces heading for the
+inline controls. Detection can be disabled (no new probes, badges hidden), and
+the high-latency warning and timeout are editable in milliseconds. Defaults are
+500 ms for a yellow warning and 5000 ms for timeout. Timeout accepts 100–60000 ms
+and must exceed the warning. A pending sample displays timeout at its deadline;
+the core exec wrapper may take up to another five seconds to finish cleanup.
+All machines share these preferences, persisted in sidebar localStorage under
+`machines.latency.settings`; reloading the mod or reopening the app retains them.
 Each machine has its own in-flight guard and shared lease. Offline, failed,
 timed-out and stale samples never masquerade as current successful readings.
 No second SSH connection, agent input or terminal restart is involved.

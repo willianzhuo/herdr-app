@@ -1,5 +1,5 @@
 import { test, expect, spyOn } from "bun:test";
-import { MachineLatency, LATENCY_KEY, latencyBadge } from "../defaults/mods/spaces/latency.js";
+import { MachineLatency, LATENCY_KEY, LATENCY_SETTINGS_KEY, latencyBadge, validateLatencySettings } from "../defaults/mods/spaces/latency.js";
 
 const machine = { name:"200", id:"core-a", state:"connected" };
 function harness(exec:any) {
@@ -56,4 +56,28 @@ test("timed out requests never turn into a successful old numeric reading", asyn
     new MachineLatency(h.api).refresh([machine],h.cx);await Promise.all(h.tasks);
     expect(latencyBadge(machine,h.store.get(LATENCY_KEY)).label).toBe("超时");
   } finally { clock.mockRestore(); }
+});
+
+test("disabling stops new probes and discards a probe already in flight", async () => {
+  let finish:any,calls=0;
+  const h=harness(() => {calls++;return new Promise(resolve => finish=resolve);});
+  const probe=new MachineLatency(h.api);probe.refresh([machine],h.cx);
+  h.store.set(LATENCY_SETTINGS_KEY,{enabled:false});probe.refresh([machine],h.cx);
+  finish({code:0});await Promise.all(h.tasks);probe.refresh([machine],h.cx);
+  expect(calls).toBe(1);expect(h.store.get(LATENCY_KEY)).toEqual({});
+  expect(latencyBadge(machine,{},Date.now(),{enabled:false}).state).toBe("disabled");
+});
+
+test("custom warning and timeout thresholds are independent, validated and used by probes", async () => {
+  const options=validateLatencySettings({enabled:true,warningMs:"200",timeoutMs:"2000"});
+  const cache={"200":{id:"core-a",state:"ok",ms:300,at:100}};
+  expect(latencyBadge(machine,cache,200,options)).toMatchObject({label:"300 ms",state:"slow"});
+  expect(latencyBadge(machine,cache,200,{...options,warningMs:400}).state).toBe("ok");
+  const calls:any[]=[];const h=harness(async (_c:any,_a:any,o:any) => {calls.push(o);return {code:0};});
+  h.store.set(LATENCY_SETTINGS_KEY,options);new MachineLatency(h.api).refresh([machine],h.cx);await Promise.all(h.tasks);
+  expect(calls).toEqual([{on:"200",timeout:2000}]);
+  expect(latencyBadge(machine,{"200":{id:"core-a",state:"pending",at:100,timeoutMs:2000}},2099,options).state).toBe("pending");
+  expect(latencyBadge(machine,{"200":{id:"core-a",state:"pending",at:100,timeoutMs:2000}},2100,options).state).toBe("timeout");
+  for (const patch of [{warningMs:"abc"},{warningMs:0},{timeoutMs:100},{timeoutMs:60001},{warningMs:1.5}])
+    expect(() => validateLatencySettings({...options,...patch})).toThrow();
 });

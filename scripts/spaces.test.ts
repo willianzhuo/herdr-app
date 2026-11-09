@@ -1,6 +1,6 @@
 import { test, expect, spyOn } from "bun:test";
 import { readFile } from "node:fs/promises";
-import { MachineLatency, LATENCY_KEY, latencyBadge } from "../defaults/mods/spaces/latency.js";
+import { MachineLatency, LATENCY_KEY, LATENCY_SETTINGS_KEY, latencyBadge, latencySettings, validateLatencySettings } from "../defaults/mods/spaces/latency.js";
 
 const source = (await readFile(new URL("../defaults/mods/spaces/main.js", import.meta.url), "utf8"))
   .replace(/^import .*;\n/gm, "").replace("export default class Spaces", "class Spaces").replace(/^export /gm, "");
@@ -12,12 +12,13 @@ function harness(replies: unknown[] = [], storage = new Map<string, string>(), s
   const availability = [{ name: null as string | null, layout: "ready" }];
   const moves: { id: string; index: number }[] = [];
   const handlers: Record<string, (...args: any[]) => void> = {};
+  const values = new Map<string, any>();
   const element: any = new Proxy({}, { get: (_, method) => (...args: any[]) => {
     if (String(method).startsWith("on_")) handlers[String(method)] = args.at(-1);
     return element;
   } });
-  const Spaces = new Function("MachineLatency", "LATENCY_KEY", "latencyBadge", "exec", "setShared", "View", "hc", "localStorage", "spaces", "panes", "run", "v_flex", "h_flex", "div", "svg", "shared", "machines", `${source}; return Spaces;`)(
-    MachineLatency, LATENCY_KEY, latencyBadge, async () => ({code:0}), () => {},
+  const Spaces = new Function("MachineLatency", "LATENCY_KEY", "LATENCY_SETTINGS_KEY", "latencyBadge", "latencySettings", "validateLatencySettings", "exec", "setShared", "View", "hc", "localStorage", "spaces", "panes", "run", "v_flex", "h_flex", "div", "svg", "shared", "machines", `${source}; return Spaces;`)(
+    MachineLatency, LATENCY_KEY, LATENCY_SETTINGS_KEY, latencyBadge, latencySettings, validateLatencySettings, async () => ({code:0}), (k:string,v:any) => values.set(k,v),
     class {},
     async (args: string[]) => {
       calls.push(args);
@@ -31,15 +32,26 @@ function harness(replies: unknown[] = [], storage = new Map<string, string>(), s
       expect(name).toBe("space.move");
       moves.push(args);
     },
-    ...Array(4).fill(() => element), () => null, () => availability,
+    ...Array(4).fill(() => element), (k:string) => values.get(k), () => availability,
   );
   const view = new Spaces();
   view.reconnecting = {};
   view.folded = new Set(["cloud"]);
   view.refreshMachines = () => {};
   const cx = { timer: { every() {} }, notify() {}, spawn(fn: (cx: unknown) => Promise<unknown>) { tasks.push(fn(cx)); } };
-  return { view, calls, tasks, cx, storage, moves, handlers, snapshot, availability };
+  return { view, calls, tasks, cx, storage, moves, handlers, snapshot, availability, values };
 }
+
+test("latency preferences persist across sidebar restarts; invalid edits do not overwrite them", () => {
+  const h = harness();h.view.init({},h.cx);
+  h.view.saveLatencySettings({enabled:false,warningMs:"800",timeoutMs:"9000"},h.cx);
+  expect(JSON.parse(h.storage.get(LATENCY_SETTINGS_KEY)!)).toEqual({enabled:false,warningMs:800,timeoutMs:9000});
+  h.view.saveLatencySettings({enabled:true,warningMs:"1000",timeoutMs:"900"},h.cx);
+  expect(h.view.latencyError).toBeTruthy();
+  expect(h.values.get(LATENCY_SETTINGS_KEY).enabled).toBe(false);
+  const next = harness([],h.storage);next.view.init({},next.cx);
+  expect(next.values.get(LATENCY_SETTINGS_KEY)).toEqual({enabled:false,warningMs:800,timeoutMs:9000});
+});
 
 const machine = { name: "cloud", id: "old", target: "user@host", session: null, via: false };
 

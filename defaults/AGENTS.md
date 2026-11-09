@@ -146,6 +146,12 @@ the highlighted line shows where it will land.
   every 15 seconds with a bounded `true` command (no terminal). This includes
   remote dispatch/processing, not ICMP ping. A 5-second timeout, offline state
   or stale reading is shown explicitly; local machines show `本机`.
+  Click a latency value or the Spaces heading's settings icon to turn detection
+  on/off and configure the high-latency warning (default 500 ms) and timeout
+  (default 5000 ms, configurable 100–60000 ms, above the warning). Settings
+  apply to all machines and persist in the sidebar mod's localStorage key
+  `machines.latency.settings`. Disabled detection hides badges and stops new
+  probes; a probe already in flight finishes under its original bound.
 - Every terminal is a core terminal. Herdr labels the ones it starts with
   `herdr.space=<id>` and `herdr.tab=<id>`. **A terminal with those
   labels shows up there**, even one you start yourself:

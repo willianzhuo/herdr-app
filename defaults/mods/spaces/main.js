@@ -4,9 +4,9 @@
 // switch, right-click for its menu, drag to reorder.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { v_flex, h_flex, Input, InputState } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
-import { MachineLatency, LATENCY_KEY, latencyBadge } from "./latency.js";
+import { MachineLatency, LATENCY_KEY, LATENCY_SETTINGS_KEY, latencyBadge, latencySettings, validateLatencySettings } from "./latency.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -66,6 +66,9 @@ export default class Spaces extends View {
     this.over = null;
     this.machines = [];
     this.latency = new MachineLatency({ exec, shared, setShared });
+    let latencyOptions;
+    try { latencyOptions = JSON.parse(localStorage.getItem(LATENCY_SETTINGS_KEY) ?? "null"); } catch {}
+    if (!shared(LATENCY_SETTINGS_KEY)) setShared(LATENCY_SETTINGS_KEY, latencySettings(latencyOptions));
     this.reconnecting = JSON.parse(localStorage.getItem("machines.reconnecting") ?? "{}");
     for (const state of Object.values(this.reconnecting)) state.busy = false;
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
@@ -78,6 +81,12 @@ export default class Spaces extends View {
 
   checkNew(cx) {
     const now = Date.now();
+    const samples = shared(LATENCY_KEY) ?? {};
+    const expired = Object.values(samples).filter(s => s.state === "pending" && now - s.at >= (s.timeoutMs ?? 5000));
+    if (expired.length) {
+      const signature = JSON.stringify(expired.map(s => s.lease));
+      if (this.latencyExpired !== signature) { this.latencyExpired = signature; cx.notify(); }
+    }
     const sp = spaces();
     for (const s of sp) if (!this.shown.has(s.id)) this.born[s.id] ??= now;
     const due = this.due(now, sp, panes());
@@ -140,6 +149,49 @@ export default class Spaces extends View {
 
   rebuilt(machine) {
     return machine?.state === "unreachable" && /^a different core answers there \("[^"]+"\)$/.test(machine.why ?? "");
+  }
+
+  openLatencySettings(cx) {
+    const options = latencySettings(shared(LATENCY_SETTINGS_KEY));
+    this.warningInput = InputState.new({ value:String(options.warningMs) });
+    this.timeoutInput = InputState.new({ value:String(options.timeoutMs) });
+    for (const input of [this.warningInput, this.timeoutInput]) input.on("change", (_e, cx) => cx.notify());
+    this.latencyError = null;
+    this.showLatencySettings = true;
+    cx.notify();
+  }
+
+  saveLatencySettings(value, cx) {
+    try {
+      const options = validateLatencySettings(value);
+      localStorage.setItem(LATENCY_SETTINGS_KEY, JSON.stringify(options));
+      setShared(LATENCY_SETTINGS_KEY, options);
+      this.latencyError = null;
+      this.latency.refresh(this.machines, cx);
+    } catch (e) { this.latencyError = String(e.message ?? e); }
+    cx.notify();
+  }
+
+  latencySettingsPanel(t) {
+    const options = latencySettings(shared(LATENCY_SETTINGS_KEY));
+    const button = (id, text, action) => div().id(id).px(7).py(4).rounded(5).cursor_pointer()
+      .hover(s => s.bg(t.hover)).on_click(action).child(text);
+    const field = (label, input) => h_flex().gap(6).items_center()
+      .child(div().flex_1().child(label))
+      .child(Input.new(input).w(76).h(28).px(6).rounded(5).border_1().border_color(t.input).bg(t.background))
+      .child(div().text_color(t.dim).child("ms"));
+    return v_flex().id("machine-latency-settings").flex_none().mx(8).mb(6).p(9).gap(8).rounded(7)
+      .bg(t.raised).border_1().border_color(t.border).text_size(11.5).text_color(t.foreground)
+      .child(h_flex().items_center().child(div().flex_1().font_medium().child("延时检测"))
+        .child(button("latency-settings-close", "×", (_e, cx) => { this.showLatencySettings = false; cx.notify(); })))
+      .child(button("latency-toggle", options.enabled ? "● 检测已开启" : "○ 检测已关闭", (_e, cx) => this.saveLatencySettings({ ...options, enabled:!options.enabled }, cx)))
+      .child(field("高延时门槛", this.warningInput))
+      .child(field("超时门槛", this.timeoutInput))
+      .child(div().text_color(t.dim).child("所有机器通用。高延时标黄；超时显示“超时”"))
+      .when(Boolean(this.latencyError), el => el.child(div().text_color(t.blocked).child(this.latencyError)))
+      .child(h_flex().justify_end().child(button("latency-settings-save", "保存门槛", (_e, cx) => this.saveLatencySettings({
+        enabled:options.enabled, warningMs:this.warningInput.value().trim(), timeoutMs:this.timeoutInput.value().trim(),
+      }, cx))));
   }
 
   reconnect(machine, cx) {
@@ -323,7 +375,8 @@ export default class Spaces extends View {
       const repair = this.reconnecting[m];
       const machine = this.machines.find(k => k.name === m) ?? repair?.machine;
       const connected = !m || machine?.state === "connected";
-      const latency = latencyBadge(m ? (machine ?? { name:m }) : null, shared(LATENCY_KEY));
+      const latencyOptions = latencySettings(shared(LATENCY_SETTINGS_KEY));
+      const latency = latencyBadge(m ? (machine ?? { name:m }) : null, shared(LATENCY_KEY), Date.now(), latencyOptions);
       const rebuilt = this.rebuilt(machine) || !!repair;
       const folded = this.folded.has(m);
       const icon = svg(`mods/workspace-chrome/${m ? "server" : "monitor"}.svg`).size(13).flex_none();
@@ -339,9 +392,10 @@ export default class Spaces extends View {
         .when(!collapsed, el => el.child(icon))
         .when(collapsed, el => el.child(div().relative().flex_none().child(icon).when(Boolean(m), el => el.child(badge))))
         .when(!collapsed, el => el.child(div().flex_1().truncate().child(m ?? "This computer"))
-          .child(div().id(`machine-latency-${m ?? "local"}`).w(66).flex_none().text_size(10.5)
-            .text_color(latency.state === "timeout" || latency.state === "error" ? t.blocked : t.muted)
-            .tooltip(latency.tooltip).child(latency.label))
+          .when(latencyOptions.enabled, el => el.child(div().id(`machine-latency-${m ?? "local"}`).w(66).flex_none().text_size(10.5)
+            .text_color(latency.state === "timeout" || latency.state === "error" ? t.blocked : latency.state === "slow" ? t.ansi3 : t.muted)
+            .cursor_pointer().on_click((_e, cx) => { cx.stop_propagation(); this.openLatencySettings(cx); })
+            .tooltip(latency.tooltip).child(latency.label)))
           .when(!connected && !rebuilt, el => el.child(div().flex_none().child((machine?.state ?? "asleep").replace(/_/g, " "))))
           .when(rebuilt, el => el.child(h_flex().flex_none().gap(3).items_center()
             .child(div().max_w(140).truncate().child(repair?.error || "rebuilt ·"))
@@ -480,9 +534,13 @@ export default class Spaces extends View {
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
       .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())
-        .when(!collapsed, el => el.child("Spaces"))
+        .when(!collapsed, el => el.child(div().flex_1().child("Spaces"))
+          .child(div().id("latency-settings-open").size(26).flex_none().flex().items_center().justify_center().rounded(6)
+            .tooltip("延时检测设置").cursor_pointer().hover(s => s.bg(t.hover).text_color(t.foreground))
+            .on_click((_e, cx) => this.openLatencySettings(cx)).child(svg("mods/workspace-chrome/settings.svg").size(13))))
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click(() => run("space.new")).child(svg("mods/workspace-chrome/plus.svg").size(14))))
+      .when(this.showLatencySettings && !collapsed, el => el.child(this.latencySettingsPanel(t)))
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pb(14).overflow_y_scrollbar().mode("always")
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
         .children(this.grouped(t, collapsed)));
