@@ -72,7 +72,7 @@ export default class Spaces extends View {
     this.reconnecting = JSON.parse(localStorage.getItem("machines.reconnecting") ?? "{}");
     for (const state of Object.values(this.reconnecting)) state.busy = false;
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
-    this.refreshMachines(cx);
+    this.refreshMachines(cx, true);
     cx.timer.every(15000, cx => this.refreshMachines(cx));
     // `git status` walks the whole tree, on another machine a process there:
     // only when its answer could have changed (see `due`).
@@ -134,13 +134,13 @@ export default class Spaces extends View {
     return [key, ...(repo ? [...keys].filter((k) => this.git[k]?.repo === repo) : [])];
   }
 
-  refreshMachines(cx) {
+  refreshMachines(cx, force = false) {
     cx.spawn(async cx => {
       try {
         const r = await hc(["machine", "ls", "--json"]);
         if (r.code === 0) {
           this.machines = (JSON.parse(r.stdout).machines ?? []).filter((m) => !m.temporary);
-          if (window().active) this.latency.refresh(this.machines, cx);
+          if (force || window().active) this.latency.refresh(this.machines, cx);
         }
       } catch {}
       cx.notify();

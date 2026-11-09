@@ -16,6 +16,8 @@ test("latency is an integer ms response time, with explicit stale/offline/timeou
   expect(latencyBadge({...machine,state:"asleep"},cache,200).label).toBe("离线");
   expect(latencyBadge({...machine,id:"replacement"},cache,200).label).toBe("测量中…");
   expect(latencyBadge(machine,{"200":{...cache["200"],state:"timeout"}},200).label).toBe("超时");
+  expect(latencyBadge(machine,{"200":{...cache["200"],state:"timeout"}},50000).label).toBe("—");
+  expect(latencyBadge(machine,{"200":{...cache["200"],state:"error"}},50000).label).toBe("—");
   expect(latencyBadge(null,cache,200).label).toBe("本机");
 });
 

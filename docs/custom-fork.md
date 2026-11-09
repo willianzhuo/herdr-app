@@ -272,8 +272,13 @@ No second SSH connection, agent input or terminal restart is involved.
 transport for SSH paths that accept small input but stall on larger bursts.
 For example, install the script in a stable local path and pair with
 `hc machine add --name your-machine --via 'python3 /path/ssh-paced.py your-ssh-target'`.
-Only use it when that connection needs it: input is limited to 256-byte pieces
-at 20 ms intervals (about 12.8 KB/s); output is unthrottled and never recorded.
+Only use it when that connection needs it: input is limited to 128-byte pieces
+at 50 ms intervals (about 2.56 KB/s); output is unthrottled and never recorded.
+Even an initial core-to-core hello (268 bytes in the reproduced case) can
+trigger the gateway stall before any terminal input. A simple preliminary
+hello succeeds, so a machine can appear paired while its actual peer handshake
+never completes. The previous 256-byte/20-ms pacing still failed this handshake;
+128-byte/50-ms pacing passed both that handshake and repeated core requests.
 It waits for a private remote readiness marker before reading local stdin, so
 SSH authentication cannot accumulate the paced writes into a single burst.
 The marker is consumed by the adapter and never enters the core protocol.

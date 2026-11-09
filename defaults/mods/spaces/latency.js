@@ -74,7 +74,7 @@ export function latencyBadge(machine, cache, now = Date.now(), options) {
   if (!machine) return { label:"本机", state:"local", tooltip:"本机终端" };
   const sample = cache?.[machine.name];
   let state = machine.state !== "connected" ? "offline" : sample?.id === machine.id ? sample.state : "pending";
-  if (state === "ok" && now - sample.at > 45000) state = "stale";
+  if (["ok", "error", "timeout"].includes(state) && now - sample.at > 45000) state = "stale";
   if (state === "pending" && sample?.id === machine.id && now - sample.at >= (sample.timeoutMs ?? settings.timeoutMs)) state = "timeout";
   if (state === "ok" && sample.ms >= settings.warningMs) state = "slow";
   const label = state === "ok" || state === "slow" ? `${Math.round(sample.ms)} ms`

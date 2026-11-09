@@ -2,7 +2,7 @@
 """Transparent paced SSH transport for input-burst compatibility.
 
 Usage: ssh-paced.py SSH_TARGET REMOTE_COMMAND. Herdr appends the command. Forward every byte unchanged; pace only
-stdin in 256-byte pieces at 20 ms intervals. Remote output is not throttled.
+stdin in 128-byte pieces at 50 ms intervals. Remote output is not throttled.
 The existing herdr-core supervisor remains responsible for reconnection.
 """
 import os
@@ -42,9 +42,11 @@ def send_input():
             data = os.read(0, 65536)
             if not data:
                 break
-            for start in range(0, len(data), 256):
-                write_all(child.stdin.fileno(), data[start:start + 256])
-                time.sleep(0.020)
+            # Even the core's initial peer hello is >256 bytes. A 20 ms gap
+            # still coalesces into a burst on affected gateways; 50 ms does not.
+            for start in range(0, len(data), 128):
+                write_all(child.stdin.fileno(), data[start:start + 128])
+                time.sleep(0.050)
     except OSError:
         pass
     finally:

@@ -141,6 +141,10 @@ the highlighted line shows where it will land.
   user-owned Bash startup guard preserves core's requested cwd through platform
   initializers and keep recovery. It leaves ordinary SSH and existing processes
   alone; see `docs/custom-fork.md` for installation and removal.
+  The optional `scripts/ssh-paced.py` transport works around SSH gateways that
+  stall on the core's initial peer hello, even before terminal input. It waits
+  for remote readiness and forwards input in 128-byte pieces 50 ms apart;
+  output is untouched. Keep a configured `--via` helper at its stable path.
 - The Spaces sidebar shows each connected remote machine's response time in
   `ms`. While the window is active, it probes through the existing core route
   every 15 seconds with a bounded `true` command (no terminal). This includes
