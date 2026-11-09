@@ -247,6 +247,17 @@ replace an installed app, or restart running applications.
 
 ## Build and validation
 
+### Machine response time
+
+The Spaces machine headings show remote response time in `ms`, refreshed every
+15 seconds while the window is active. The optional latency module uses the
+existing core route (including a configured `--via` adapter), executing only
+`true` outside any terminal with a five-second bound. Values include core
+dispatch and remote process startup; they are not ICMP ping measurements.
+Each machine has its own in-flight guard and shared lease. Offline, failed,
+timed-out and stale samples never masquerade as current successful readings.
+No second SSH connection, agent input or terminal restart is involved.
+
 ### SSH input-burst compatibility transport
 
 `scripts/ssh-paced.py SSH_TARGET REMOTE_COMMAND` is an optional transparent
@@ -255,10 +266,17 @@ For example, install the script in a stable local path and pair with
 `hc machine add --name your-machine --via 'python3 /path/ssh-paced.py your-ssh-target'`.
 Only use it when that connection needs it: input is limited to 256-byte pieces
 at 20 ms intervals (about 12.8 KB/s); output is unthrottled and never recorded.
+It waits for a private remote readiness marker before reading local stdin, so
+SSH authentication cannot accumulate the paced writes into a single burst.
+The marker is consumed by the adapter and never enters the core protocol.
+Readiness has a 30-second deadline; readiness/errors are timestamped on stderr
+for transport diagnostics, without recording input or terminal output.
 The existing core supervisor handles reconnects. It is not a hung-RPC watchdog
 and does not restart cores or resume interrupted tasks. An affected SSH path
 was verified with repeated requests and a 12,032-byte binary SHA-256 comparison.
 No personal machine names, SSH credentials or routing settings are shipped.
+Run `python3 scripts/test_ssh_paced.py -v` for an isolated delayed-channel test
+covering binary transparency, command quoting, exit status and handshake errors.
 
 ### Remote shell directory preservation
 

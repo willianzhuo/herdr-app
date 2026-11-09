@@ -6,18 +6,25 @@ stdin in 256-byte pieces at 20 ms intervals. Remote output is not throttled.
 The existing herdr-core supervisor remains responsible for reconnection.
 """
 import os
+import select
+import shlex
 import signal
 import subprocess
 import sys
 import threading
 import time
+import uuid
 
 if len(sys.argv) != 3:
     raise SystemExit("usage: ssh-paced.py SSH_TARGET REMOTE_COMMAND")
+# Pacing before authentication just fills ssh's local buffer: the gateway still
+# receives a burst when the exec channel opens. Wait for that channel first.
+ready = ("HERDR_SSH_READY_" + uuid.uuid4().hex + "\n").encode()
+remote = "printf '%s\\n' " + shlex.quote(ready.decode().strip()) + "; exec sh -c " + shlex.quote(sys.argv[2])
 child = subprocess.Popen(
     ["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
      "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4",
-     "-T", sys.argv[1], sys.argv[2]],
+     "-T", sys.argv[1], remote],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
 )
 
@@ -52,15 +59,25 @@ def stop(signum, _frame):
 
 signal.signal(signal.SIGTERM, stop)
 signal.signal(signal.SIGINT, stop)
-threading.Thread(target=send_input, daemon=True).start()
+failed = False
 try:
+    deadline = time.monotonic() + 30
+    for expected in ready:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([child.stdout], [], [], remaining)[0]:
+            raise OSError("remote SSH channel did not become ready within 30 s")
+        if os.read(child.stdout.fileno(), 1) != bytes([expected]):
+            raise OSError("unexpected remote SSH readiness reply")
+    print(time.strftime("%Y-%m-%dT%H:%M:%S%z"), "ssh-paced:", sys.argv[1], "remote channel ready", file=sys.stderr, flush=True)
+    threading.Thread(target=send_input, daemon=True).start()
     while True:
         data = os.read(child.stdout.fileno(), 65536)
         if not data:
             break
         write_all(1, data)
-except OSError:
-    pass
+except OSError as error:
+    failed = True
+    print(time.strftime("%Y-%m-%dT%H:%M:%S%z"), "ssh-paced:", sys.argv[1], str(error), file=sys.stderr, flush=True)
 finally:
     if child.poll() is None:
         child.terminate()
@@ -69,4 +86,4 @@ finally:
     except subprocess.TimeoutExpired:
         child.kill()
         child.wait()
-raise SystemExit(child.returncode or 0)
+raise SystemExit(1 if failed else (child.returncode or 0))

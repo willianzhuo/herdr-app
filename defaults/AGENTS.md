@@ -141,6 +141,11 @@ the highlighted line shows where it will land.
   user-owned Bash startup guard preserves core's requested cwd through platform
   initializers and keep recovery. It leaves ordinary SSH and existing processes
   alone; see `docs/custom-fork.md` for installation and removal.
+- The Spaces sidebar shows each connected remote machine's response time in
+  `ms`. While the window is active, it probes through the existing core route
+  every 15 seconds with a bounded `true` command (no terminal). This includes
+  remote dispatch/processing, not ICMP ping. A 5-second timeout, offline state
+  or stale reading is shown explicitly; local machines show `本机`.
 - Every terminal is a core terminal. Herdr labels the ones it starts with
   `herdr.space=<id>` and `herdr.tab=<id>`. **A terminal with those
   labels shows up there**, even one you start yourself:

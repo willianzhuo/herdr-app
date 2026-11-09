@@ -6,6 +6,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { MachineLatency, LATENCY_KEY, latencyBadge } from "./latency.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -64,6 +65,7 @@ export default class Spaces extends View {
     this.pressed = null;
     this.over = null;
     this.machines = [];
+    this.latency = new MachineLatency({ exec, shared, setShared });
     this.reconnecting = JSON.parse(localStorage.getItem("machines.reconnecting") ?? "{}");
     for (const state of Object.values(this.reconnecting)) state.busy = false;
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
@@ -125,7 +127,13 @@ export default class Spaces extends View {
 
   refreshMachines(cx) {
     cx.spawn(async cx => {
-      try { const r = await hc(["machine", "ls", "--json"]); if (r.code === 0) this.machines = (JSON.parse(r.stdout).machines ?? []).filter((m) => !m.temporary); } catch {}
+      try {
+        const r = await hc(["machine", "ls", "--json"]);
+        if (r.code === 0) {
+          this.machines = (JSON.parse(r.stdout).machines ?? []).filter((m) => !m.temporary);
+          if (window().active) this.latency.refresh(this.machines, cx);
+        }
+      } catch {}
       cx.notify();
     });
   }
@@ -315,6 +323,7 @@ export default class Spaces extends View {
       const repair = this.reconnecting[m];
       const machine = this.machines.find(k => k.name === m) ?? repair?.machine;
       const connected = !m || machine?.state === "connected";
+      const latency = latencyBadge(m ? (machine ?? { name:m }) : null, shared(LATENCY_KEY));
       const rebuilt = this.rebuilt(machine) || !!repair;
       const folded = this.folded.has(m);
       const icon = svg(`mods/workspace-chrome/${m ? "server" : "monitor"}.svg`).size(13).flex_none();
@@ -330,6 +339,9 @@ export default class Spaces extends View {
         .when(!collapsed, el => el.child(icon))
         .when(collapsed, el => el.child(div().relative().flex_none().child(icon).when(Boolean(m), el => el.child(badge))))
         .when(!collapsed, el => el.child(div().flex_1().truncate().child(m ?? "This computer"))
+          .child(div().id(`machine-latency-${m ?? "local"}`).w(66).flex_none().text_size(10.5)
+            .text_color(latency.state === "timeout" || latency.state === "error" ? t.blocked : t.muted)
+            .tooltip(latency.tooltip).child(latency.label))
           .when(!connected && !rebuilt, el => el.child(div().flex_none().child((machine?.state ?? "asleep").replace(/_/g, " "))))
           .when(rebuilt, el => el.child(h_flex().flex_none().gap(3).items_center()
             .child(div().max_w(140).truncate().child(repair?.error || "rebuilt ·"))

@@ -1,5 +1,6 @@
 import { test, expect, spyOn } from "bun:test";
 import { readFile } from "node:fs/promises";
+import { MachineLatency, LATENCY_KEY, latencyBadge } from "../defaults/mods/spaces/latency.js";
 
 const source = (await readFile(new URL("../defaults/mods/spaces/main.js", import.meta.url), "utf8"))
   .replace(/^import .*;\n/gm, "").replace("export default class Spaces", "class Spaces").replace(/^export /gm, "");
@@ -15,7 +16,8 @@ function harness(replies: unknown[] = [], storage = new Map<string, string>(), s
     if (String(method).startsWith("on_")) handlers[String(method)] = args.at(-1);
     return element;
   } });
-  const Spaces = new Function("View", "hc", "localStorage", "spaces", "panes", "run", "v_flex", "h_flex", "div", "svg", "shared", "machines", `${source}; return Spaces;`)(
+  const Spaces = new Function("MachineLatency", "LATENCY_KEY", "latencyBadge", "exec", "setShared", "View", "hc", "localStorage", "spaces", "panes", "run", "v_flex", "h_flex", "div", "svg", "shared", "machines", `${source}; return Spaces;`)(
+    MachineLatency, LATENCY_KEY, latencyBadge, async () => ({code:0}), () => {},
     class {},
     async (args: string[]) => {
       calls.push(args);
