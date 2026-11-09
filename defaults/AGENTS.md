@@ -145,6 +145,11 @@ the highlighted line shows where it will land.
   stall on the core's initial peer hello, even before terminal input. It waits
   for remote readiness and forwards input in 128-byte pieces 50 ms apart;
   output is untouched. Keep a configured `--via` helper at its stable path.
+  It is a last-resort workaround: its 2.56 KiB/s input ceiling also slows
+  automatic shell initialization and layout writes. Use
+  `scripts/check-core-ssh.py` to compare approved SSH entry points with the same
+  core id and bounded no-op requests before retaining a permanent throttle.
+  See `docs/custom-fork.md`; keep personal gateways/accounts out of public code.
   The opt-in `scripts/install-interactive-colors.py --shell bash` clears inherited
   `NO_COLOR` in new interactive Herdr Bash shells on their own machine, before
   platform startup can replace Bash. Default `--shell zsh` supports local macOS

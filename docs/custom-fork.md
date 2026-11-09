@@ -247,6 +247,31 @@ replace an installed app, or restart running applications.
 
 ## Build and validation
 
+### Diagnose a slow SSH entry path
+
+`scripts/check-core-ssh.py <ssh-alias>` tests an independent SSH connection,
+the actual peer hello and bounded no-op requests at 0, 4 KiB and 16 KiB. It
+attaches no terminal and sends no input to an agent. `--gateway <hostname>` and
+`--port <port>` let an operator compare an approved alternate entry point while
+retaining the original alias's SSH user and authentication. `--sizes` accepts
+payloads up to 64 KiB; `--report <path>` writes a private JSON report.
+
+Compare `core_id` before switching: an alternate gateway must reach the same
+core. Separate cold SSH authentication time, warm request RTT and `remote_ms`.
+If only one entry path stalls as request size grows, prefer a verified working
+entry over permanently throttling all input. A 4 KiB shell initializer alone
+needs over 1.6 seconds at the paced adapter's 2.56 KiB/s ceiling; layout writes
+and other automatic requests add to this even without a large user paste.
+
+A verified unthrottled route can be stored in the local machine profile with
+`hc machine add --name <existing-name> --via 'ssh -o HostName=<alternate> -p <port> -T <original-alias>'`.
+Back up the existing profile first; replacing it requires removing only that
+local connection profile and pairing the same core again. Keep its existing
+name/id and private directory mapping; never stop the remote core, holder or
+agents for an entry-path change. Test repeated requests and automatic reconnect
+in an isolated local core before replacing the user's profile. Personal
+gateways, machine accounts and actual route choices are not shipped in this repo.
+
 ### Machine response time
 
 The Spaces machine headings show remote response time in `ms`, refreshed every
