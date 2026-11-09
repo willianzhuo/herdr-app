@@ -150,6 +150,9 @@ the highlighted line shows where it will land.
   `scripts/check-core-ssh.py` to compare approved SSH entry points with the same
   core id and bounded no-op requests before retaining a permanent throttle.
   See `docs/custom-fork.md`; keep personal gateways/accounts out of public code.
+  After a machine replacement, retest its original SSH alias and retire obsolete
+  gateway/family/pacing overrides when the standard route passes. Preserve its
+  name, directory mapping, color guard and user latency preferences.
   The opt-in `scripts/install-interactive-colors.py --shell bash` clears inherited
   `NO_COLOR` in new interactive Herdr Bash shells on their own machine, before
   platform startup can replace Bash. Default `--shell zsh` supports local macOS

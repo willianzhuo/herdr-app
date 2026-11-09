@@ -272,6 +272,14 @@ agents for an entry-path change. Test repeated requests and automatic reconnect
 in an isolated local core before replacing the user's profile. Personal
 gateways, machine accounts and actual route choices are not shipped in this repo.
 
+Revalidate the original alias after replacing a development machine or repairing
+its entry path. If the standard route passes the peer handshake and larger
+requests, restore `target=<original-alias>, via=false` rather than retaining an
+old alternate gateway, forced address family or pacing adapter. Back up the
+profile and verify the same remote core and live terminal identities across the
+connection-only replacement. Archive inactive private helpers; keep independent
+features such as directory mapping, interactive colors and latency preferences.
+
 ### Machine response time
 
 The Spaces machine headings show remote response time in `ms`, refreshed every
