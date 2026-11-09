@@ -428,6 +428,15 @@ zsh invocations and shells outside Herdr retain their existing environment.
 The installer preserves file permissions, keeps a first-original backup at
 ~/.zshrc.herdr-colors-v1.bak, and supports --remove (managed block only).
 
+For remote Bash machines, run the same opt-in installer there with `--shell bash`.
+It prepends an interactive-Herdr-only guard to `.bashrc`, before platform startup
+can exec another Bash. Noninteractive commands and ordinary SSH shells keep
+their original `NO_COLOR`. Startup symlinks and permissions are preserved, with
+a `.herdr-colors-v1.bak` backup beside the actual startup file. The installer can
+be piped through `hc exec --on <machine> --timeout 20 -i -- python3 - --shell bash`.
+This handles a remote core started or updated from an automation process whose
+environment included `NO_COLOR=1`; no core restart is needed for new Bash terminals.
+
 The launcher fix applies on the next app launch; the shell guard applies to new
 interactive shells immediately. Existing processes retain their original environment.
 Do not stop active tasks to apply it. An approved idle Codex restart should use

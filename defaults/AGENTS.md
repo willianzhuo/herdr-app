@@ -145,6 +145,12 @@ the highlighted line shows where it will land.
   stall on the core's initial peer hello, even before terminal input. It waits
   for remote readiness and forwards input in 128-byte pieces 50 ms apart;
   output is untouched. Keep a configured `--via` helper at its stable path.
+  The opt-in `scripts/install-interactive-colors.py --shell bash` clears inherited
+  `NO_COLOR` in new interactive Herdr Bash shells on their own machine, before
+  platform startup can replace Bash. Default `--shell zsh` supports local macOS
+  terminals. It backs up the startup file and leaves existing processes alone;
+  a running monochrome Agent needs an explicitly approved exit/resume to change
+  its launch environment. See `docs/custom-fork.md` for installation/removal.
 - The Spaces sidebar shows each connected remote machine's response time in
   `ms`. While the window is active, it probes through the existing core route
   every 15 seconds with a bounded `true` command (no terminal). This includes

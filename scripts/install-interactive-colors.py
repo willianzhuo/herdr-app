@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove inherited NO_COLOR in new interactive Herdr zsh shells only."""
+"""Remove inherited NO_COLOR in new interactive Herdr zsh or Bash shells."""
 import argparse
 from pathlib import Path
 import re
@@ -16,11 +16,26 @@ fi
 """ + END + "\n"
 
 
-def install(home, remove=False):
-    profile = home / ".zshrc"
+def install(home, remove=False, shell="zsh"):
+    if shell not in ("zsh", "bash"):
+        raise ValueError("shell must be zsh or bash")
+    profile = home / (".zshrc" if shell == "zsh" else ".bashrc")
+    # Keep user-managed startup symlinks (common on remote machines) intact.
+    if profile.is_symlink():
+        profile = profile.resolve(strict=True)
     original = profile.read_text() if profile.exists() else ""
+    if original.count(START) != original.count(END) or original.count(START) > 1:
+        raise ValueError("ambiguous color guard markers; leaving startup file unchanged")
     clean = re.sub(r"(?m)^" + re.escape(START) + r"\n.*?^" + re.escape(END) + r"\n?", "", original, flags=re.S)
-    updated = clean if remove else clean.rstrip("\n") + ("\n\n" if clean.rstrip("\n") else "") + BLOCK
+    block = BLOCK if shell == "zsh" else START + """
+# Clear inherited log-only color suppression before platform startup execs Bash.
+if [[ $- == *i* && -n ${HC_TERMINAL_ID-} ]]; then
+    unset NO_COLOR
+fi
+""" + END + "\n"
+    # Bash platform initialization may exec another Bash; clear before it runs.
+    updated = clean if remove else (block + clean if shell == "bash" else
+        clean.rstrip("\n") + ("\n\n" if clean.rstrip("\n") else "") + block)
     if updated == original:
         return profile
     backup = profile.with_name(profile.name + ".herdr-colors-v1.bak")
@@ -28,7 +43,7 @@ def install(home, remove=False):
         backup.write_bytes(profile.read_bytes())
         backup.chmod(stat.S_IMODE(profile.stat().st_mode))
     mode = stat.S_IMODE(profile.stat().st_mode) if profile.exists() else 0o600
-    with tempfile.NamedTemporaryFile(dir=home, prefix=".herdr-colors-", delete=False, mode="w") as f:
+    with tempfile.NamedTemporaryFile(dir=profile.parent, prefix=".herdr-colors-", delete=False, mode="w") as f:
         f.write(updated)
         staged = Path(f.name)
     try:
@@ -43,5 +58,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--home", type=Path, default=Path.home())
     parser.add_argument("--remove", action="store_true")
+    parser.add_argument("--shell", choices=["zsh", "bash"], default="zsh")
     args = parser.parse_args()
-    print(install(args.home, args.remove))
+    print(install(args.home, args.remove, args.shell))
