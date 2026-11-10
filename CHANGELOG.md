@@ -1,5 +1,16 @@
 # Herdr changelog
 
+## [0.1.13.12] - 2026-11-10
+<!-- spotlight macos -->
+
+### New
+- **Browse a folder by path in Files.** Enter an absolute, home or relative folder path on the current machine; choose 跟随终端 to resume following the terminal. Right-click a folder to copy its relative or absolute path to the local clipboard.
+- **Machine response times.** The sidebar shows response times in milliseconds with offline, stale and timeout states. Use the badge or Spaces gear to turn measurement on/off and adjust warning and timeout thresholds.
+
+### Fixed
+- Old machine timeout badges expire instead of remaining indefinitely after the connection recovers.
+- The optional interactive color guard also supports remote Bash shells, including startup scripts that replace the shell. Existing running sessions are preserved.
+
 ## [0.1.13.11] - 2026-11-09
 <!-- spotlight macos -->
 

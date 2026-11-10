@@ -100,6 +100,17 @@ Files 支持 Markdown 预览与只读源码切换。打开文件后，点击 Pan
 Files renders Markdown with a read-only Source toggle. Open a file and choose
 Panel or New tab, then use its top-center grip to move it like a terminal pane.
 File panes retain their path and machine across moves and app restarts.
+Files 顶部支持输入目录路径，回车或点击“打开”跳转；点击“跟随终端”
+恢复跟随当前终端。右键文件夹可复制相对路径或绝对路径到本机剪贴板。
+相对路径以当前 Files 根目录为基准，SSH 路径属于当前远端机器。
+Files accepts a folder path on the current machine (absolute, relative or ~/).
+Enter or 打开 navigates; 跟随终端 resumes following terminal cwd. Right-click
+a folder to copy its root-relative or absolute filesystem path locally.
+
+机器名旁显示毫秒响应时间；点击延时或 Spaces 的齿轮可关闭测量，
+也可设置高延时和超时门槛。这是本机经 Core 到远端执行的响应时间。
+Machine badges show round-trip command response time in milliseconds, not ICMP
+ping. Use a badge or the Spaces gear to toggle probes and set thresholds.
 
 Ports 支持 SSH 开发端口自动发现、手动转发、端口冲突分配和重连。
 停止转发不会停止远端服务。后台训练监控可通过随包提供的

@@ -464,6 +464,13 @@ Core remains separately installed and updated. On macOS, granting ordinary
 folder write access is insufficient when App Management blocks Custom from
 modifying the independently signed Herdr Core.app.
 
+`custom-v0.1.13.12` includes the subsequent Files folder address bar and path
+clipboard menu, configurable machine response-time badges, stale-badge recovery,
+and the opt-in Bash color-guard extension. All existing fork PRs are already
+merged into `custom`; the new changes were committed directly to that branch.
+The optional SSH diagnostics/pacing tools remain opt-in source utilities; the
+release does not install machine-specific gateways or transport overrides.
+
 ## Interactive terminal colors
 
 The custom macOS launcher clears inherited `NO_COLOR` before opening the GUI.
