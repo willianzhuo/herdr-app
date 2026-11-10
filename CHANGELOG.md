@@ -8,6 +8,7 @@
 - **Machine response times.** The sidebar shows response times in milliseconds with offline, stale and timeout states. Use the badge or Spaces gear to turn measurement on/off and adjust warning and timeout thresholds.
 
 ### Fixed
+- The machine sidebar renders correctly while a newly listed machine has no latency sample or identity metadata yet.
 - Old machine timeout badges expire instead of remaining indefinitely after the connection recovers.
 - The optional interactive color guard also supports remote Bash shells, including startup scripts that replace the shell. Existing running sessions are preserved.
 

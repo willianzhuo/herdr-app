@@ -42,7 +42,7 @@ export class MachineLatency {
         continue;
       }
       const previous = cache[name];
-      if (this.busy.has(name) || (previous?.id === id && previous.state !== "offline" && Date.now() - previous.at < INTERVAL)) continue;
+      if (this.busy.has(name) || (previous && previous.id === id && previous.state !== "offline" && Date.now() - previous.at < INTERVAL)) continue;
       const token = this.current.get(name);
       const lease = `${Date.now()}:${Math.random()}`;
       // This shared lease also deduplicates multiple sidebar instances/reloads.
@@ -73,9 +73,9 @@ export function latencyBadge(machine, cache, now = Date.now(), options) {
   if (!settings.enabled) return { label:"已关闭", state:"disabled", tooltip:"延时检测已关闭" };
   if (!machine) return { label:"本机", state:"local", tooltip:"本机终端" };
   const sample = cache?.[machine.name];
-  let state = machine.state !== "connected" ? "offline" : sample?.id === machine.id ? sample.state : "pending";
+  let state = machine.state !== "connected" ? "offline" : sample && sample.id === machine.id ? sample.state : "pending";
   if (["ok", "error", "timeout"].includes(state) && now - sample.at > 45000) state = "stale";
-  if (state === "pending" && sample?.id === machine.id && now - sample.at >= (sample.timeoutMs ?? settings.timeoutMs)) state = "timeout";
+  if (state === "pending" && sample && sample.id === machine.id && now - sample.at >= (sample.timeoutMs ?? settings.timeoutMs)) state = "timeout";
   if (state === "ok" && sample.ms >= settings.warningMs) state = "slow";
   const label = state === "ok" || state === "slow" ? `${Math.round(sample.ms)} ms`
     : ({ pending:"测量中…", timeout:"超时", offline:"离线", error:"不可用", stale:"—" }[state] ?? "—");

@@ -21,6 +21,17 @@ test("latency is an integer ms response time, with explicit stale/offline/timeou
   expect(latencyBadge(null,cache,200).label).toBe("本机");
 });
 
+test("a newly listed machine renders and starts its first probe before identity metadata arrives", async () => {
+  const row={name:"cloud",state:"connected"};
+  expect(latencyBadge(row,{}).state).toBe("pending");
+  expect(latencyBadge(row,undefined).label).toBe("测量中…");
+  const calls:any[]=[];
+  const h=harness(async (_cmd:any,_args:any,options:any)=>{calls.push(options);return {code:0};});
+  new MachineLatency(h.api).refresh([row],h.cx);await Promise.all(h.tasks);
+  expect(calls).toEqual([{on:"cloud",timeout:5000}]);
+  expect(latencyBadge(row,h.store.get(LATENCY_KEY)).label).toMatch(/^\d+ ms$/);
+});
+
 test("one bounded probe per machine, shared across sidebars; slow peers do not block others", async () => {
   let finish:any;
   const calls:any[] = [];
