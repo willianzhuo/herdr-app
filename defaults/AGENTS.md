@@ -263,6 +263,15 @@ writing a new file. The Files panel supports Windows folder paths with spaces,
 parentheses and apostrophes, and preserves Unicode file and folder names
 (including Chinese). Directory links expand as folders; their contents load
 only when expanded.
+Right-click a folder for **复制相对路径** (relative to the current Files root)
+or **复制绝对路径**; right-click the root label to copy `.` or its absolute path.
+Both write literal filesystem paths to the local clipboard, including for SSH
+machines. The top address bar opens a folder on the current machine with Enter
+or **打开**. It accepts absolute paths, `~`/`~/…`, and paths relative to the
+current Files root. Invalid targets leave the current folder intact. A manual
+root is remembered per machine/workspace while the view lives; **跟随终端**
+restores following the focused terminal's directory. Fixed file panels keep
+their own file/machine and do not show this navigation bar.
 Markdown files (`.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`, `.mdwn`, case
 insensitive) open as a selectable, scrollable rendered preview. **Preview** /
 **Source** switches between Markdown and the read-only source editor without

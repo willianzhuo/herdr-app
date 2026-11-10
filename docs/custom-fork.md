@@ -173,6 +173,19 @@ any running Claude or Traex session.
 
 ## Markdown in Files
 
+The Files address bar accepts a folder path on the current machine: press Enter
+or **打开** to browse it. Absolute paths, `~`/`~/…`, and paths relative to the
+current Files root work; missing, inaccessible or non-folder targets show an
+error. Manual navigation stays pinned per machine/workspace for the lifetime
+of the view, even when terminal cwd changes. **跟随终端** resumes automatic
+following. This changes only Files, not the terminal's working directory.
+
+Right-click a folder for **复制相对路径** or **复制绝对路径**. The relative
+path starts at the current Files root; the root label's menu copies `.` or its
+absolute path. SSH paths refer to the remote filesystem and are copied as
+literal text to the local clipboard, without a machine prefix or shell quoting.
+The menu captures the clicked path so later focus changes cannot change it.
+
 The right Files panel renders Markdown by default, including headings, lists,
 quotes, fenced code, tables and links supported by native `TextView`. Preview /
 Source switches to the existing read-only editor using the same bounded content.
@@ -205,6 +218,9 @@ follow TextView's existing sandbox and HTTP(S) URL policy. No webview, new nativ
 API, dependency or file write is needed for previews. Cross-tab movement of
 file/mod panes requires the updated native Custom build; hot-loading the mods
 alone enables file panels, same-tab movement and previews in older builds.
+Install `defaults/mods/file-path-menu` in the same app home's `mods/` directory
+for the folder clipboard menu. Fixed file panels retain their file and machine;
+the directory navigation bar is only shown in Files.
 
 ## Branches and remotes
 

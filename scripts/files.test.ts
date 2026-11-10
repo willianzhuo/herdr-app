@@ -130,45 +130,49 @@ test("Files follows directory links one level at a time", async () => {
 
 // Render the real Files view with native-element stand-ins; click its actual
 // mode/refresh/back handlers and control file reads independently of the tree.
+function element(kind: string, value?: unknown): any {
+  const node: any = {kind, value, kids:[], methods:new Map()};
+  const proxy: any = new Proxy(node, {get(target, name: string) {
+    if (name in target) return target[name];
+    return (...args: any[]) => {
+      if (name === "when") return args[0] ? args[1](proxy) : proxy;
+      if (name === "child") target.kids.push(args[0]);
+      if (name === "children") target.kids.push(...args[0]);
+      target.methods.set(name,args); return proxy;
+    };
+  }});
+  return proxy;
+}
+const flatten = (node: any): any[] => typeof node === "object" && node !== null ? [node,...(node.kids ?? []).flatMap(flatten)] : [];
+
 function previewHarness(reader: () => Promise<string | null>, fixed?: any) {
-  const tasks: Promise<unknown>[] = [], reads: unknown[] = [], editors: any[] = [], runs: any[] = [];
+  const tasks: Promise<unknown>[] = [], reads: unknown[] = [], editors: any[] = [], runs: any[] = [], overlays: any[] = [];
   let load = reader;
   let panelProps = fixed;
   let browsingFolder = "/remote/work";
-  const element = (kind: string, value?: unknown): any => {
-    const node: any = {kind, value, kids:[], methods:new Map()};
-    const proxy: any = new Proxy(node, {get(target, name: string) {
-      if (name in target) return target[name];
-      return (...args: any[]) => {
-        if (name === "when") return args[0] ? args[1](proxy) : proxy;
-        if (name === "child") target.kids.push(args[0]);
-        if (name === "children") target.kids.push(...args[0]);
-        target.methods.set(name,args); return proxy;
-      };
-    }});
-    return proxy;
-  };
+  let machine = "box", workspace = "space";
+  let execute: Function = async()=>({code:1});
   const context = {cwd:"/remote/work",on:"box",space:"space"};
   const theme = new Proxy({}, {get:()=>"#112233"});
-  const Files = new Function("View","div","svg","v_flex","h_flex","Editor","EditorState","TextView",
-    "spaces","panes","focused","exec","readTextFile","watchFolder","theme","settings","window","run",
+  const Files = new Function("View","div","svg","v_flex","h_flex","Editor","EditorState","TextView","Input","InputState",
+    "spaces","panes","focused","exec","readTextFile","watchFolder","theme","settings","window","run","openOverlay",
     source.replace(/^import .*;\n/gm, "").replace("export default class Files", "class Files") + ";return Files;")(
       class {}, () => element("div"), () => element("svg"), () => element("column"), () => element("row"),
       {new:(state: any)=>element("editor",state)}, {new:(options: any)=>{const state={...options,released:false,release(){this.released=true;}};editors.push(state);return state;}},
       {markdown:(id: string,text: string)=>element("markdown",text).id(id)},
-      () => [{id:"space",active:true,machine:"box",folder:browsingFolder,tabs:[{id:"tab",active:true}]}], () => [{pane:"pane",tab:"tab",focused:true,cwd:browsingFolder}], () => ({pane:"pane"}),
-      async()=>({code:1}), async(...args: any[])=>{reads.push(args);return load();}, async()=>{}, () => theme,
-      () => ({font_family:"Monospace"}), () => ({platform:"linux"}), (...args: any[])=>runs.push(args),
+      {new:(state:any)=>element("input",state)}, {new:(options:any)=>({text:options.value??"",handlers:new Map(),value(){return this.text;},set_value(v:string){this.text=v;},on(k:string,fn:any){this.handlers.set(k,fn);}})},
+      () => [{id:workspace,active:true,machine,folder:browsingFolder,tabs:[{id:"tab",active:true}]}], () => [{pane:"pane",tab:"tab",focused:true,cwd:browsingFolder}], () => ({pane:"pane"}),
+      (...args:any[])=>execute(...args), async(...args: any[])=>{reads.push(args);return load();}, async()=>{}, () => theme,
+      () => ({font_family:"Monospace"}), () => ({platform:"linux"}), (...args: any[])=>runs.push(args), (spec:any)=>overlays.push(spec),
   );
   const Panel = fixed ? new Function("Files","div","props",panelSource.replace(/^import .*;\n/gm, "").replace("export default class FilePanel","class FilePanel")+";return FilePanel;")(Files,()=>element("div"),()=>panelProps) : Files;
   const view = new Panel();
   Object.assign(view,{context:{...context,key:JSON.stringify(context)},root:context.cwd,on:context.on,entries:new Map(),folders:new Set(),marks:{}});
-  const cx: any = {notify(){},timer:{every(){}},spawn(fn: any){tasks.push(fn(cx));}};
+  const cx: any = {notify(){},stop_propagation(){},timer:{every(){}},spawn(fn: any){tasks.push(fn(cx));}};
   view.init({},cx);
-  const flatten = (node: any): any[] => typeof node === "object" && node !== null ? [node,...(node.kids ?? []).flatMap(flatten)] : [];
   const nodes = () => flatten(view.render(cx));
   const click = (id: string) => nodes().find(n=>n.methods?.get("id")?.[0]===id).methods.get("on_click")[0]({},cx);
-  return {view,cx,reads,editors,nodes,click,runs,setReader:(r: typeof reader)=>{load=r;},setProps:(p:any)=>{panelProps=p;},switchFolder:()=>{browsingFolder="/other/project";},flush:async()=>{await Promise.all(tasks.splice(0));}};
+  return {view,cx,reads,editors,nodes,click,runs,overlays,setExec:(fn:Function)=>{execute=fn;},setReader:(r: typeof reader)=>{load=r;},setProps:(p:any)=>{panelProps=p;},switchFolder:(folder="/other/project")=>{browsingFolder=folder;},switchScope:(on:string,space:string)=>{machine=on;workspace=space;},flush:async()=>{while(tasks.length)await Promise.all(tasks.splice(0));}};
 }
 
 const panelSource = await readFile(new URL("../defaults/mods/file-panel/main.js",import.meta.url),"utf8");
@@ -248,4 +252,120 @@ test("independent file panels retain their path/machine across terminal focus an
 
 test("file panels ship the exact same bounded read-only viewer as Files", async () => {
   expect(await readFile(new URL("../defaults/mods/file-panel/files.js",import.meta.url),"utf8")).toBe(source);
+});
+
+test("folder right-click captures the exact tree path and leaves expansion unchanged", async () => {
+  const h=previewHarness(async()=>""); await h.flush();
+  h.view.entries.set("",[{name:"资料 $folder",dir:true},{name:"plain.txt",dir:false}]);
+  h.view.entries.set("资料 $folder",[{name:"O'Brien\\child",dir:true}]);
+  h.view.folders.add("资料 $folder");
+  const folder=h.nodes().find(n=>n.methods?.get("id")?.[0]==="file-资料 $folder/O'Brien\\child");
+  expect(folder.methods.get("on_mouse_down")[0]).toBe("right");
+  folder.methods.get("on_mouse_down")[1]({},h.cx);
+  expect(h.overlays[0]).toMatchObject({mod:"file-path-menu",kind:"popup",props:{relative:"资料 $folder/O'Brien\\child",absolute:"/remote/work/资料 $folder/O'Brien\\child"}});
+  expect([...h.view.folders]).toEqual(["资料 $folder"]);
+  expect(h.nodes().find(n=>n.methods?.get("id")?.[0]==="file-plain.txt").methods.has("on_mouse_down")).toBe(false);
+  h.nodes().find(n=>n.methods?.get("id")?.[0]==="files-root-path").methods.get("on_mouse_down")[1]({},h.cx);
+  expect(h.overlays.at(-1).props).toEqual({relative:".",absolute:"/remote/work"});
+  h.switchFolder();h.nodes();await h.flush();
+  expect(h.overlays[0].props.absolute).toBe("/remote/work/资料 $folder/O'Brien\\child");
+
+  const paths=new Function(source.slice(source.indexOf("function entryPaths("),source.indexOf("async function directory("))+";return entryPaths;")();
+  expect(paths("/","child")).toEqual({relative:"child",absolute:"/child"});
+  expect(paths("C:\\Work\\","docs/中文")).toEqual({relative:"docs\\中文",absolute:"C:\\Work\\docs\\中文"});
+  expect(paths("C:/Work/","docs/中文").absolute).toBe("C:/Work/docs/中文");
+  expect(paths("\\\\server\\share","docs/中文").absolute).toBe("\\\\server\\share\\docs\\中文");
+});
+
+test("path popup copies its captured value through the local clipboard and supports keyboard dismissal", async () => {
+  const menuSource=await readFile(new URL("../defaults/mods/file-path-menu/main.js",import.meta.url),"utf8");
+  let props:any={relative:"docs/中文",absolute:"/remote/work/docs/中文",overlay:"menu1"};
+  const writes:string[]=[],closed:string[]=[];
+  const Menu=new Function("View","div","v_flex","h_flex","props","closeOverlay","theme",
+    menuSource.replace(/^import .*;\n/gm,"").replace("export default class FilePathMenu","class FilePathMenu")+";return FilePathMenu;")(
+      class {},()=>element("div"),()=>element("column"),()=>element("row"),()=>props,(id:string)=>closed.push(id),()=>({}));
+  const cx={focus_handle:()=>({focus(){}}),write_to_clipboard:(s:string)=>writes.push(s),stop_propagation(){},notify(){}};
+  const menu=new Menu();menu.init({},cx);
+  // A cwd/focus change while the popup is open must not change the selected path.
+  props={relative:"other",absolute:"/other",overlay:"menu1"};
+  flatten(menu.render()).find(n=>n.methods?.get("id")?.[0]==="copy-path-relative").methods.get("on_click")[0]({},cx);
+  const key=menu.render().methods.get("on_key_down")[0];
+  key({key:"down"},cx);key({key:"enter"},cx);key({key:"escape"},cx);
+  expect(writes).toEqual(["docs/中文","/remote/work/docs/中文"]);
+  expect(closed).toEqual(["menu1","menu1","menu1"]);
+});
+
+const loadResolver=(execute:Function,platform="linux")=>new Function("exec","window",`${directorySource};return resolveFolder;`)(execute,()=>({platform}));
+test.skipIf(process.platform==="win32")("folder navigation resolves literal, relative, home and symlink paths without shell expansion", async () => {
+  const root=await mkdtemp(join(tmpdir(),"herdr-path-"));
+  const resolve=loadResolver(async(command:string,args:string[])=>{
+    const p=Bun.spawn([command,...args],{stdout:"pipe",stderr:"pipe",env:{...process.env,HOME:root}});
+    const [code,stdout,stderr]=await Promise.all([p.exited,new Response(p.stdout).text(),new Response(p.stderr).text()]);
+    return {code,stdout,stderr};
+  });
+  try {
+    const name="中文 O'Brien $(touch OWNED)\\literal";
+    await mkdir(join(root,name));await symlink(name,join(root,"alias"),"dir");
+    expect(await resolve(name,root,null)).toBe(join(root,name));
+    expect(await resolve(join(root,name),"/",null)).toBe(join(root,name));
+    expect(await resolve("~/alias","/",null)).toBe(join(root,"alias"));
+    expect(await resolve("~","/",null)).toBe(root);
+    expect((await directory(root,null)).some((entry:any)=>entry.name==="OWNED")).toBe(false);
+    await writeFile(join(root,"file"),"text");
+    await expect(resolve("file",root,null)).rejects.toThrow();
+    await expect(resolve("missing",root,null)).rejects.toThrow();
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test("folder navigation keeps remote machine and only falls back for a missing POSIX shell", async () => {
+  const calls:any[]=[];
+  const resolve=loadResolver(async(command:string,args:string[],options:any)=>{
+    calls.push({command,args,...options});
+    if(command==="sh")throw new Error("cannot start sh: program not found");
+    return {code:0,stdout:"C:\\Work\\中文",stderr:""};
+  });
+  expect(await resolve("中文","C:\\Work","win")).toBe("C:\\Work\\中文");
+  expect(calls.map(c=>[c.command,c.on])).toEqual([["sh","win"],["powershell","win"]]);
+  expect(calls[1].args.at(-1)).toContain("Get-Item -LiteralPath");
+  const unavailable=loadResolver(async()=>{throw new Error("connection lost");});
+  await expect(unavailable("/work","/","box")).rejects.toThrow("connection lost");
+});
+
+test("Files address bar pins a directory per workspace, validates failures and can follow terminal again", async () => {
+  const h=previewHarness(async()=>"");await h.flush();
+  const requests:any[]=[];
+  h.setExec(async(command:string,args:string[],options:any)=>{
+    if(command==="sh"&&args[2]==="files-path") {
+      requests.push({value:args[3],base:args[4],...options});
+      return args[3]==="missing"?{code:1,stderr:"No such directory"}:{code:0,stdout:"/remote/资料\n"};
+    }
+    return {code:0,stdout:""};
+  });
+  h.view.pathInput.set_value("../资料");h.view.pathInput.handlers.get("submit")({},h.cx);await h.flush();
+  expect(requests).toEqual([{value:"../资料",base:"/remote/work",on:"box"}]);
+  expect(h.view.root).toBe("/remote/资料");expect(h.view.pathInput.value()).toBe("/remote/资料");
+  h.switchFolder();h.nodes();await h.flush();expect(h.view.root).toBe("/remote/资料");
+  h.view.pathInput.set_value("missing");h.click("files-path-open");await h.flush();
+  expect(h.view.pathError).toContain("No such directory");expect(h.view.root).toBe("/remote/资料");
+  h.switchScope("box","second");h.nodes();await h.flush();expect(h.view.root).toBe("/other/project");
+  h.switchScope("box","space");h.nodes();await h.flush();expect(h.view.root).toBe("/remote/资料");
+  h.click("files-path-follow");await h.flush();expect(h.view.root).toBe("/other/project");
+  expect(h.view.pathInput.value()).toBe("/other/project");
+  expect(h.nodes().some(n=>n.methods?.get("id")?.[0]==="files-path-follow")).toBe(false);
+});
+
+test("Files discards pending navigation after workspace switches or input edits", async () => {
+  for(const change of ["scope","input"]) {
+    const h=previewHarness(async()=>"");await h.flush();
+    let finish!:(r:any)=>void;
+    h.setExec(async(_command:string,args:string[])=>args[2]==="files-path"?new Promise(resolve=>{finish=resolve;}):{code:1});
+    h.view.pathInput.set_value("/target");h.click("files-path-open");
+    if(change==="scope") {h.switchScope("other-machine","other-space");h.nodes();}
+    else {h.view.pathInput.set_value("/edited");h.view.pathInput.handlers.get("change")({},h.cx);}
+    finish({code:0,stdout:"/target\n"});
+    await h.flush();
+    expect(h.view.roots.size).toBe(0);expect(h.view.navigation).toBeNull();
+  }
+  const panel=previewHarness(async()=>"# Fixed",{path:"/work/file.md",on:"box"});await panel.flush();
+  expect(panel.nodes().some(n=>n.methods?.get("id")?.[0]==="files-path-input")).toBe(false);
 });
