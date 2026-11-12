@@ -263,7 +263,7 @@ writing a new file. The Files panel supports Windows folder paths with spaces,
 parentheses and apostrophes, and preserves Unicode file and folder names
 (including Chinese). Directory links expand as folders; their contents load
 only when expanded.
-Right-click a folder for **复制相对路径** (relative to the current Files root)
+Right-click a file or folder for **复制相对路径** (relative to the current Files root)
 or **复制绝对路径**; right-click the root label to copy `.` or its absolute path.
 Both write literal filesystem paths to the local clipboard, including for SSH
 machines. The top address bar opens a folder on the current machine with Enter
@@ -272,6 +272,17 @@ current Files root. Invalid targets leave the current folder intact. A manual
 root is remembered per machine/workspace while the view lives; **跟随终端**
 restores following the focused terminal's directory. Fixed file panels keep
 their own file/machine and do not show this navigation bar.
+The same menu's **下载…** opens a local download dialog. It defaults to the
+local Downloads directory; **选择目录** uses the system folder picker and
+**开始下载** starts the transfer. Files preserve exact binary bytes; folders
+download as `.tar.gz` (Python 3 required locally and on the source machine).
+The helper uses the configured core route, including custom transports, and
+never sends input to terminals. Progress shows in the dialog; closing it leaves
+an already-started transfer running. Same-name destinations get a numeric suffix,
+partial files are not published, and source changes detected during a file
+transfer fail it. **打开保存位置** reveals the completed local download.
+Directory archives use a private temporary file on the source, cleaned after
+the transfer; internal symlinks are archived as links rather than followed.
 Markdown files (`.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`, `.mdwn`, case
 insensitive) open as a selectable, scrollable rendered preview. **Preview** /
 **Source** switches between Markdown and the read-only source editor without

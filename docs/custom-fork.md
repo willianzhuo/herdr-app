@@ -180,11 +180,32 @@ error. Manual navigation stays pinned per machine/workspace for the lifetime
 of the view, even when terminal cwd changes. **跟随终端** resumes automatic
 following. This changes only Files, not the terminal's working directory.
 
-Right-click a folder for **复制相对路径** or **复制绝对路径**. The relative
+Right-click a file or folder for **复制相对路径** or **复制绝对路径**. The relative
 path starts at the current Files root; the root label's menu copies `.` or its
 absolute path. SSH paths refer to the remote filesystem and are copied as
 literal text to the local clipboard, without a machine prefix or shell quoting.
 The menu captures the clicked path so later focus changes cannot change it.
+
+**下载…** opens a download dialog with a local destination (Downloads by
+default, or **选择目录** for the system folder picker). **开始下载** starts
+a separate worker: files retain all binary bytes, directories become `.tar.gz`,
+and closing the dialog leaves an already-started download running. Progress and
+errors appear in the dialog; a completed transfer offers **打开保存位置**.
+The source path, machine and type are captured at right-click time. Transfers
+use the current core's route through `hc exec --json`, including `--via`, rather
+than a separate SSH alias. Python 3 is required on the app host and source.
+
+One-MiB chunks keep memory and core responses bounded. The worker validates
+source identity/size/timestamps around reads and refuses short or truncated
+responses. It writes a private partial file, syncs it, and atomically links a
+fresh final name; existing files and symlinks are preserved with numbered names.
+Choose a filesystem supporting hard links for this atomic publication.
+Folder archives are built in a private source-side temporary directory and
+cleaned afterward. Nested symlinks are retained without following them; special
+files such as FIFOs/sockets make the archive fail. Folder contents are not a
+filesystem snapshot: avoid packaging directories actively being rewritten.
+Per-job requests/status live in the local app home's `file-downloads/` directory;
+there is no persistent download daemon or terminal input.
 
 The right Files panel renders Markdown by default, including headings, lists,
 quotes, fenced code, tables and links supported by native `TextView`. Preview /
@@ -219,7 +240,8 @@ API, dependency or file write is needed for previews. Cross-tab movement of
 file/mod panes requires the updated native Custom build; hot-loading the mods
 alone enables file panels, same-tab movement and previews in older builds.
 Install `defaults/mods/file-path-menu` in the same app home's `mods/` directory
-for the folder clipboard menu. Fixed file panels retain their file and machine;
+for the path menu, and `defaults/mods/file-download` for download dialogs and the
+Python worker. Fixed file panels retain their file and machine;
 the directory navigation bar is only shown in Files.
 
 ## Branches and remotes

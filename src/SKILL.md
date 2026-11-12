@@ -33,8 +33,12 @@ This mod preference persists in `shared.json` as `tabs.width` and applies immedi
 Files has a folder address bar (Enter / 打开) on the current machine, accepting
 absolute, home (`~`/`~/…`) and root-relative paths. Manual browsing pins its root
 per machine/workspace until 跟随终端 restores terminal following. Right-click
-a folder to copy its relative or absolute filesystem path to the local clipboard;
+a file or folder to copy its relative or absolute filesystem path to the local clipboard;
 relative paths start at the current Files root, including on SSH machines.
+The same menu offers 下载…: choose a local directory (Downloads by default),
+then start a binary-preserving download or a `.tar.gz` folder archive. Existing
+destinations are never overwritten. The progress window may be closed while
+the transfer continues. Python 3 is needed on the app host and source machine.
 Files can open a selected file as a panel or a new tab. The `file-panel` mod
 uses `{path, on, title, folder}` props to pin its file and machine; it does not
 follow terminal focus or write the file. Markdown has Preview / Source modes.

@@ -264,9 +264,10 @@ test("folder right-click captures the exact tree path and leaves expansion uncha
   folder.methods.get("on_mouse_down")[1]({},h.cx);
   expect(h.overlays[0]).toMatchObject({mod:"file-path-menu",kind:"popup",props:{relative:"资料 $folder/O'Brien\\child",absolute:"/remote/work/资料 $folder/O'Brien\\child"}});
   expect([...h.view.folders]).toEqual(["资料 $folder"]);
-  expect(h.nodes().find(n=>n.methods?.get("id")?.[0]==="file-plain.txt").methods.has("on_mouse_down")).toBe(false);
+  h.nodes().find(n=>n.methods?.get("id")?.[0]==="file-plain.txt").methods.get("on_mouse_down")[1]({},h.cx);
+  expect(h.overlays.at(-1).props).toMatchObject({absolute:"/remote/work/plain.txt",directory:false,on:"box",download:true});
   h.nodes().find(n=>n.methods?.get("id")?.[0]==="files-root-path").methods.get("on_mouse_down")[1]({},h.cx);
-  expect(h.overlays.at(-1).props).toEqual({relative:".",absolute:"/remote/work"});
+  expect(h.overlays.at(-1).props).toMatchObject({relative:".",absolute:"/remote/work",directory:true,on:"box",download:true});
   h.switchFolder();h.nodes();await h.flush();
   expect(h.overlays[0].props.absolute).toBe("/remote/work/资料 $folder/O'Brien\\child");
 
@@ -279,11 +280,11 @@ test("folder right-click captures the exact tree path and leaves expansion uncha
 
 test("path popup copies its captured value through the local clipboard and supports keyboard dismissal", async () => {
   const menuSource=await readFile(new URL("../defaults/mods/file-path-menu/main.js",import.meta.url),"utf8");
-  let props:any={relative:"docs/中文",absolute:"/remote/work/docs/中文",overlay:"menu1"};
-  const writes:string[]=[],closed:string[]=[];
-  const Menu=new Function("View","div","v_flex","h_flex","props","closeOverlay","theme",
+  let props:any={relative:"docs/中文",absolute:"/remote/work/docs/中文",overlay:"menu1",on:"box",directory:true,download:true};
+  const writes:string[]=[],closed:string[]=[],overlays:any[]=[];
+  const Menu=new Function("View","div","v_flex","h_flex","props","closeOverlay","openOverlay","theme",
     menuSource.replace(/^import .*;\n/gm,"").replace("export default class FilePathMenu","class FilePathMenu")+";return FilePathMenu;")(
-      class {},()=>element("div"),()=>element("column"),()=>element("row"),()=>props,(id:string)=>closed.push(id),()=>({}));
+      class {},()=>element("div"),()=>element("column"),()=>element("row"),()=>props,(id:string)=>closed.push(id),(spec:any)=>overlays.push(spec),()=>({}));
   const cx={focus_handle:()=>({focus(){}}),write_to_clipboard:(s:string)=>writes.push(s),stop_propagation(){},notify(){}};
   const menu=new Menu();menu.init({},cx);
   // A cwd/focus change while the popup is open must not change the selected path.
@@ -291,8 +292,10 @@ test("path popup copies its captured value through the local clipboard and suppo
   flatten(menu.render()).find(n=>n.methods?.get("id")?.[0]==="copy-path-relative").methods.get("on_click")[0]({},cx);
   const key=menu.render().methods.get("on_key_down")[0];
   key({key:"down"},cx);key({key:"enter"},cx);key({key:"escape"},cx);
+  key({key:"down"},cx);key({key:"enter"},cx);
   expect(writes).toEqual(["docs/中文","/remote/work/docs/中文"]);
-  expect(closed).toEqual(["menu1","menu1","menu1"]);
+  expect(closed).toEqual(["menu1","menu1","menu1","menu1"]);
+  expect(overlays).toEqual([{mod:"file-download",kind:"dialog",width:520,props:{path:"/remote/work/docs/中文",on:"box",directory:true}}]);
 });
 
 const loadResolver=(execute:Function,platform="linux")=>new Function("exec","window",`${directorySource};return resolveFolder;`)(execute,()=>({platform}));
