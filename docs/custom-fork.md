@@ -191,13 +191,23 @@ default, or **选择目录** for the system folder picker). **开始下载** sta
 a separate worker: files retain all binary bytes, directories become `.tar.gz`,
 and closing the dialog leaves an already-started download running. Progress and
 errors appear in the dialog; a completed transfer offers **打开保存位置**.
-The source path, machine and type are captured at right-click time. Transfers
-use the current core's route through `hc exec --json`, including `--via`, rather
-than a separate SSH alias. Python 3 is required on the app host and source.
+The source path, machine and type are captured at right-click time. Remote data
+streams through a short-lived SFTP connection to the exact SSH target configured
+for that Core machine. It uses the existing SSH configuration and batch
+authentication; a cold connection can take several seconds before progress.
+Core prepares metadata and folder archives, and a private nonce file verifies
+that SFTP reaches the same source route. Python 3 is required on both machines.
 
-One-MiB chunks keep memory and core responses bounded. The worker validates
-source identity/size/timestamps around reads and refuses short or truncated
-responses. It writes a private partial file, syncs it, and atomically links a
+The dialog shows **SFTP**, **Core 兼容模式** or **本机复制**. Before starting,
+**兼容模式** explicitly selects the previous Core transfer. Missing local SFTP,
+custom `--via`/complex targets, Windows source paths and batch-unsupported newline
+paths use Core with the reason shown. SFTP authentication/data failures are
+reported; they do not silently switch transports. No SSH settings are changed.
+
+One-MiB reads keep compatibility-mode memory and Core responses bounded. The
+worker validates source identity/size/timestamps before and after transfer,
+refuses incomplete responses and hashes the local bytes. It writes a private
+partial file, syncs it, and atomically links a
 fresh final name; existing files and symlinks are preserved with numbered names.
 Choose a filesystem supporting hard links for this atomic publication.
 Folder archives are built in a private source-side temporary directory and
@@ -498,10 +508,11 @@ merged into `custom`; the new changes were committed directly to that branch.
 The optional SSH diagnostics/pacing tools remain opt-in source utilities; the
 release does not install machine-specific gateways or transport overrides.
 
-`custom-v0.1.13.13` packages the Files download dialog and binary transfer
-worker, including `.tar.gz` folder archives, progress, collision-safe destination
-names and source-change detection. It retains the previous custom behavior and
-does not change the shared core or install the author's personal configuration.
+The unpublished changes add the Files download dialog and SFTP transfer worker,
+including `.tar.gz` folder archives, progress, collision-safe destination names
+and source-change detection. They are hot-loaded locally for user verification;
+a new DMG/release is deferred until the user confirms. They do not change the
+shared core or install the author's personal configuration.
 
 ## Interactive terminal colors
 

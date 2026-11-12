@@ -39,6 +39,10 @@ The same menu offers 下载…: choose a local directory (Downloads by default),
 then start a binary-preserving download or a `.tar.gz` folder archive. Existing
 destinations are never overwritten. The progress window may be closed while
 the transfer continues. Python 3 is needed on the app host and source machine.
+Remote data uses SFTP on the machine's configured SSH target; Core still prepares
+metadata/archives and verifies the source. The dialog shows the transport and
+offers 兼容模式 before starting. Missing SFTP, custom `--via` routes or unsupported
+paths use Core with a visible reason. SFTP failures do not silently retry via Core.
 Files can open a selected file as a panel or a new tab. The `file-panel` mod
 uses `{path, on, title, folder}` props to pin its file and machine; it does not
 follow terminal focus or write the file. Markdown has Preview / Source modes.

@@ -276,8 +276,12 @@ The same menu's **下载…** opens a local download dialog. It defaults to the
 local Downloads directory; **选择目录** uses the system folder picker and
 **开始下载** starts the transfer. Files preserve exact binary bytes; folders
 download as `.tar.gz` (Python 3 required locally and on the source machine).
-The helper uses the configured core route, including custom transports, and
-never sends input to terminals. Progress shows in the dialog; closing it leaves
+Remote file data uses SFTP through the machine's configured SSH target; Core
+prepares metadata/archives and checks the source afterward. The dialog shows the
+transport and offers **兼容模式** before starting. Missing SFTP, custom `--via`
+routes and unsupported paths use the existing Core transfer with a reason shown;
+SFTP connection or transfer failures are reported without silently retrying.
+The helper never sends input to terminals. Progress shows in the dialog; closing it leaves
 an already-started transfer running. Same-name destinations get a numeric suffix,
 partial files are not published, and source changes detected during a file
 transfer fail it. **打开保存位置** reveals the completed local download.

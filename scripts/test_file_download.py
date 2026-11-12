@@ -3,6 +3,7 @@ import base64
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -16,6 +17,18 @@ MODULE = Path(__file__).resolve().parents[1] / 'defaults/mods/file-download/down
 spec = importlib.util.spec_from_file_location('file_download', MODULE)
 download = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(download)
+SFTP = shutil.which('sftp')
+SFTP_SERVER = next((p for p in ['/usr/libexec/sftp-server', '/usr/lib/openssh/sftp-server', '/usr/lib/ssh/sftp-server'] if Path(p).is_file()), None)
+
+
+class DirectSftp(download.Download):
+    """Exercise real OpenSSH SFTP over stdio without a user SSH connection."""
+    def select_transport(self):
+        self.update(transport='SFTP')
+        return 'fixture'
+
+    def sftp_command(self, target):
+        return [SFTP, '-D', SFTP_SERVER, '-b', '-', '-R', '64']
 
 
 class DownloadTests(unittest.TestCase):
@@ -119,7 +132,7 @@ class DownloadTests(unittest.TestCase):
                      'stderr':base64.b64encode(result.stderr).decode(), 'timed_out':False, 'truncated':False}
             return subprocess.CompletedProcess(argv, 0, json.dumps(value).encode(), b'')
         with patch.object(download.subprocess, 'run', core):
-            state = self.job(source, on='remote alias', core='/test/hc').run()
+            state = self.job(source, on='remote alias', core='/test/hc', transport='core').run()
         self.assertEqual(state['phase'], 'complete', state)
         self.assertEqual(Path(state['path']).read_bytes(), source.read_bytes())
         self.assertEqual(len(calls), 3)
@@ -152,6 +165,86 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(Path(state['path']).read_bytes(), source.read_bytes())
         with self.assertRaises(ValueError):
             download.job_folder(str(self.root), '../outside')
+
+    @unittest.skipUnless(SFTP and SFTP_SERVER, 'requires OpenSSH SFTP client/server')
+    def test_real_sftp_stream_preserves_literal_globs_quotes_unicode_and_binary_bytes(self):
+        data = bytes(range(256)) * (download.CHUNK // 128 + 1)
+        for name in ["中文 O'Brien $a.bin", 'star* [x]? "quotes".bin', 'literal\\name.bin']:
+            source = self.root / name
+            source.write_bytes(data)
+            (self.root / 'starXXX xQ "quotes".bin').write_bytes(b'wrong')
+            (self.dest / name).write_bytes(b'keep')
+            job = self.job(source, cls=DirectSftp)
+            state = job.run()
+            self.assertEqual(state['phase'], 'complete', state)
+            self.assertEqual(state['transport'], 'SFTP')
+            self.assertEqual(Path(state['path']).read_bytes(), data)
+            self.assertEqual((self.dest / name).read_bytes(), b'keep')
+            self.assertEqual(Path(state['path']).stat().st_mode & 0o777, 0o600)
+            marker = Path(tempfile.gettempdir()) / ('herdr-files-' + str(os.getuid())) / (job.job + '.probe')
+            self.assertFalse(marker.exists())
+        self.assertFalse(list(self.dest.glob('.herdr-download-*')))
+
+    @unittest.skipUnless(SFTP and SFTP_SERVER, 'requires OpenSSH SFTP client/server')
+    def test_real_sftp_folder_archive_and_post_transfer_source_validation(self):
+        source = self.root / 'folder'
+        source.mkdir()
+        (source / 'child').write_bytes(os.urandom(8192))
+        state = self.job(source, directory=True, cls=DirectSftp).run()
+        self.assertEqual(state['phase'], 'complete', state)
+        with tarfile.open(state['path']) as archive:
+            self.assertEqual(archive.extractfile('folder/child').read(), (source / 'child').read_bytes())
+        original = self.root / 'changed'
+        original.write_bytes(b'original')
+        class ChangeAfter(DirectSftp):
+            def transfer_sftp(inner, target, meta, temp):
+                super().transfer_sftp(target, meta, temp)
+                original.write_bytes(b'new content')
+        state = self.job(original, cls=ChangeAfter).run()
+        self.assertEqual(state['phase'], 'error', state)
+        self.assertIn('Source changed', state['error'])
+        self.assertFalse((self.dest / original.name).exists())
+
+    @unittest.skipUnless(SFTP and SFTP_SERVER, 'requires OpenSSH SFTP client/server')
+    def test_sftp_failure_or_mismatched_route_never_publishes_or_silently_falls_back(self):
+        source = self.root / 'source'
+        source.write_bytes(b'wanted')
+        class Fail(DirectSftp):
+            def sftp_command(self, target):
+                return [sys.executable, '-c', 'import sys;sys.stdin.read();sys.exit(1)']
+            def call(inner, op, **args):
+                if op == 'read' and args.get('length'):
+                    raise AssertionError('must not silently fall back to Core data reads')
+                return super().call(op, **args)
+        state = self.job(source, cls=Fail).run()
+        self.assertEqual(state['phase'], 'error', state)
+        self.assertIn('SFTP download failed', state['error'])
+        class WrongRoute(DirectSftp):
+            def call(inner, op, **args):
+                value = super().call(op, **args)
+                if op == 'prepare':
+                    Path(json.loads(value)['marker']).write_text('different route')
+                return value
+        state = self.job(source, cls=WrongRoute).run()
+        self.assertEqual(state['phase'], 'error', state)
+        self.assertIn('differs from', state['error'])
+        self.assertFalse(list(self.dest.iterdir()))
+
+    def test_transport_selection_uses_exact_core_target_and_explains_compatibility(self):
+        job = self.job('/remote/file', on='machine')
+        with patch.object(download.shutil, 'which', return_value='/usr/bin/sftp'):
+            for machine, wanted in [({'name':'machine','target':'ssh-alias','via':False}, 'ssh-alias'),
+                                    ({'name':'machine','target':'ssh command','via':True}, None)]:
+                reply = subprocess.CompletedProcess([], 0, json.dumps({'machines':[machine]}).encode(), b'')
+                with patch.object(download.subprocess, 'run', return_value=reply):
+                    self.assertEqual(job.select_transport(), wanted)
+                self.assertEqual(job.state['transport'], 'SFTP' if wanted else 'Core')
+                if not wanted:
+                    self.assertTrue(job.state['transportDetail'])
+            explicit = self.job('/remote/file', on='machine', transport='core')
+            with patch.object(download.subprocess, 'run', side_effect=AssertionError('no route probe for explicit compatibility mode')):
+                self.assertIsNone(explicit.select_transport())
+            self.assertEqual(explicit.state['transport'], 'Core')
 
 
 if __name__ == '__main__':

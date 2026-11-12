@@ -11,6 +11,7 @@ export default class FileDownload extends View {
     this.source = { path:p.path, on:p.on ?? null, directory:p.directory === true };
     this.overlay = p.overlay;
     this.destination = `${home()}/Downloads`;
+    this.compatibility = false;
     cx.timer.every(1000, cx => this.poll(cx));
   }
 
@@ -36,7 +37,7 @@ export default class FileDownload extends View {
     if (this.busy || this.state || this.picking || !this.source.path) return;
     this.busy = true; this.error = null; cx.notify();
     // All source fields were captured by the right-click, independent of focus.
-    const request = { ...this.source, destination:this.destination, core:settings()?.core || "hc" };
+    const request = { ...this.source, destination:this.destination, core:settings()?.core || "hc", transport:this.compatibility ? "core" : "auto" };
     cx.spawn(async cx => {
       try { this.state = await this.call("start", request); }
       catch (e) { this.error = String(e); }
@@ -71,13 +72,16 @@ export default class FileDownload extends View {
 
   render() {
     const t = theme(), s = this.state;
-    const progress = s?.phase === "complete" ? "下载完成" : s?.phase === "finishing" ? "正在完成下载…" : s?.phase === "packing" ? "正在打包文件夹…" : s?.phase === "downloading"
+    const progress = s?.phase === "complete" ? "下载完成" : s?.phase === "finishing" ? "正在完成下载…" : s?.phase === "connecting" ? "正在连接 SFTP…" : s?.phase === "verifying" ? "正在校验下载…" : s?.phase === "packing" ? "正在打包文件夹…" : s?.phase === "downloading"
       ? `正在下载 ${bytes(s.bytes)} / ${bytes(s.total)}${s.total ? ` · ${Math.min(99, Math.floor(s.bytes * 100 / s.total))}%` : ""}`
       : s ? "正在准备下载…" : "文件保存到本机；重名时自动添加编号。";
     const button = (id, label, action) => div().id(id).px(12).py(7).rounded(6).cursor_pointer().bg(t.hover).on_click(action).child(label);
     return v_flex().id("file-download").w_full().min_h(0).p(18).gap(12).bg(t.background).text_color(t.foreground).text_size(13)
       .child(div().font_semibold().text_size(16).child(this.source.directory ? "下载文件夹（.tar.gz）" : "下载文件"))
       .child(div().text_color(t.muted).child(`来源：${this.source.on || "本机"}`))
+      .child(h_flex().gap(8).items_center()
+        .child(div().flex_1().text_color(t.muted).child(`传输：${s?.transport === "SFTP" ? "SFTP" : s?.transport === "Core" ? "Core 兼容模式" : s?.transport === "Local" ? "本机复制" : this.compatibility ? "Core 兼容模式" : "SFTP 优先"}${s?.transportDetail ? ` · ${s.transportDetail}` : ""}`))
+        .when(!s && !this.busy, el => el.child(button("download-transport", this.compatibility ? "使用 SFTP" : "兼容模式", (_e, cx) => { this.compatibility = !this.compatibility; cx.notify(); }))))
       .child(div().text_size(12).truncate().tooltip(this.source.path || "").child(this.source.path || "未选择文件"))
       .child(div().text_color(t.muted).child("本机保存目录"))
       .child(h_flex().gap(8).items_center().child(div().flex_1().min_w(0).truncate().tooltip(this.destination).child(this.destination))
