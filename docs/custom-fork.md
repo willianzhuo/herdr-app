@@ -498,6 +498,11 @@ merged into `custom`; the new changes were committed directly to that branch.
 The optional SSH diagnostics/pacing tools remain opt-in source utilities; the
 release does not install machine-specific gateways or transport overrides.
 
+`custom-v0.1.13.13` packages the Files download dialog and binary transfer
+worker, including `.tar.gz` folder archives, progress, collision-safe destination
+names and source-change detection. It retains the previous custom behavior and
+does not change the shared core or install the author's personal configuration.
+
 ## Interactive terminal colors
 
 The custom macOS launcher clears inherited `NO_COLOR` before opening the GUI.

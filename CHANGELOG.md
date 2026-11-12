@@ -1,5 +1,13 @@
 # Herdr changelog
 
+## [0.1.13.13] - 2026-11-12
+<!-- spotlight macos -->
+
+### New
+- **Download from Files.** Right-click a file or folder, choose 下载…, and save to a local directory. Files preserve binary contents; folders download as `.tar.gz` archives. The dialog shows progress and offers 打开保存位置 when finished.
+- Downloads keep running after their progress window closes. Existing destination files are preserved with numbered names; incomplete or changed source files are reported without publishing a partial download.
+- Files now offers relative and absolute path copying for individual files as well as folders.
+
 ## [0.1.13.12] - 2026-11-10
 <!-- spotlight macos -->
 

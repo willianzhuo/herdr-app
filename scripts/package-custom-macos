@@ -106,6 +106,14 @@ Files 顶部支持输入目录路径，回车或点击“打开”跳转；点�
 Files accepts a folder path on the current machine (absolute, relative or ~/).
 Enter or 打开 navigates; 跟随终端 resumes following terminal cwd. Right-click
 a folder to copy its root-relative or absolute filesystem path locally.
+右键文件或文件夹选择“下载…”：默认保存到本机 Downloads，可选择其他
+目录，查看进度并打开保存位置。文件保留二进制内容，文件夹保存为 .tar.gz。
+重名自动编号不覆盖；关闭进度窗口后，已启动的下载继续运行。
+本机和源机器需要 Python 3；保存目录须支持硬链接（例如本机 Downloads）。
+Right-click files or folders and choose 下载… to download locally with progress.
+Files retain binary bytes; folders become .tar.gz archives. Existing files are
+never overwritten. A started transfer continues after its progress window closes.
+Python 3 is needed on both machines; choose a local destination supporting hard links.
 
 机器名旁显示毫秒响应时间；点击延时或 Spaces 的齿轮可关闭测量，
 也可设置高延时和超时门槛。这是本机经 Core 到远端执行的响应时间。
