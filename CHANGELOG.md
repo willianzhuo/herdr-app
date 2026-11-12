@@ -1,6 +1,6 @@
 # Herdr changelog
 
-## [Unreleased]
+## [0.1.13.13] - 2026-11-12
 <!-- spotlight macos -->
 
 ### New

@@ -112,12 +112,16 @@ a folder to copy its root-relative or absolute filesystem path locally.
 本机和源机器需要 Python 3；保存目录须支持硬链接（例如本机 Downloads）。
 远端文件数据通过 SFTP 传输，沿用该机器的 SSH 配置；对话框显示传输方式。
 自定义连接或没有 SFTP 时使用 Core 兼容模式；也可在开始前手动选择。
+关闭下载详情后，右下角继续显示进度；其 × 可隐藏窗口，下载不受影响。
+Files 顶部“下载”可重新查看任务；“清除已结束”仅清记录，不删除文件。
 Right-click files or folders and choose 下载… to download locally with progress.
 Files retain binary bytes; folders become .tar.gz archives. Existing files are
 never overwritten. A started transfer continues after its progress window closes.
 Python 3 is needed on both machines; choose a local destination supporting hard links.
 Remote data uses SFTP with the machine's SSH configuration. The dialog shows the
 transport and offers Core compatibility mode for custom routes or missing SFTP.
+Closing details keeps progress in the bottom-right corner; × hides it without
+cancelling transfers. Files → 下载 reopens tasks; clearing results keeps files.
 
 机器名旁显示毫秒响应时间；点击延时或 Spaces 的齿轮可关闭测量，
 也可设置高延时和超时门槛。这是本机经 Core 到远端执行的响应时间。

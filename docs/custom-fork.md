@@ -532,11 +532,12 @@ merged into `custom`; the new changes were committed directly to that branch.
 The optional SSH diagnostics/pacing tools remain opt-in source utilities; the
 release does not install machine-specific gateways or transport overrides.
 
-The unpublished changes add the Files download dialog and SFTP transfer worker,
-including `.tar.gz` folder archives, progress, collision-safe destination names
-and source-change detection. They are hot-loaded locally for user verification;
-a new DMG/release is deferred until the user confirms. They do not change the
-shared core or install the author's personal configuration.
+`custom-v0.1.13.13` adds the Files download dialog and SFTP transfer worker,
+including `.tar.gz` folder archives, collision-safe destination names and
+source-change detection. A closable bottom-right progress float and Files'
+download-history entry retain access to ongoing jobs and completed results.
+The release does not change the shared core or install the author's personal
+configuration.
 
 ## Interactive terminal colors
 
