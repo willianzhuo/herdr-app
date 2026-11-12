@@ -285,6 +285,16 @@ The helper never sends input to terminals. Progress shows in the dialog; closing
 an already-started transfer running. Same-name destinations get a numeric suffix,
 partial files are not published, and source changes detected during a file
 transfer fail it. **打开保存位置** reveals the completed local download.
+The shipped layouts include a bottom-right **下载** progress float. Closing
+details leaves the task there; click its name/status to reopen that same job.
+It lists multiple transfers, can be collapsed, and keeps completed/failed results
+for 24 hours (up to 20); **×** dismisses a finished result without deleting files.
+The header's **×** hides the whole float without cancelling downloads. Files'
+top **下载** button reopens the task list; **清除已结束** clears only finished
+results. A new download shows the float again. The history window has its own
+close button and an empty state.
+The float hides tasks whose details are open. Personal layouts can add a root
+`floating` entry `{id:"file-download-progress", content:{mod:"file-download", props:{role:"progress"}}, edge:"bottom", align:"end"}`.
 Directory archives use a private temporary file on the source, cleaned after
 the transfer; internal symlinks are archived as links rather than followed.
 Markdown files (`.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`, `.mdwn`, case

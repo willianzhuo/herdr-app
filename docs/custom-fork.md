@@ -191,6 +191,30 @@ default, or **选择目录** for the system folder picker). **开始下载** sta
 a separate worker: files retain all binary bytes, directories become `.tar.gz`,
 and closing the dialog leaves an already-started download running. Progress and
 errors appear in the dialog; a completed transfer offers **打开保存位置**.
+After closing details, the bottom-right **下载** float shows the job's current
+phase, transferred bytes and progress bar. Multiple jobs appear together;
+**收起/展开** switches to a small badge/list. Click a filename or status to
+reopen that existing job, without starting another transfer. Completed or failed
+results remain for 24 hours (up to 20); **×** removes a finished result from the
+list, leaving its downloaded file intact. Tasks with open details are hidden
+from the float until those details close.
+The float header's **×** hides the entire progress window without cancelling
+any transfer. **Files → 下载** remains available to reopen the task list in its
+own closable window; **清除已结束** clears completed/failed results while keeping
+active jobs and downloaded files. Starting a new download shows the float again.
+
+Shipped layouts contain the progress float. Existing personal layouts need this
+entry in their root `floating` array (preserve other entries):
+
+```json
+{ "id": "file-download-progress", "content": { "mod": "file-download", "props": { "role": "progress" } }, "edge": "bottom", "align": "end" }
+```
+
+The view reads per-job status locally once per second and recovers active jobs
+after an app restart. Clearing finished results writes a small `dismissed` marker
+beside that job's state; it does not cancel workers or delete source/destination
+files. A detail-view heartbeat prevents stale UI state from hiding a task forever.
+
 The source path, machine and type are captured at right-click time. Remote data
 streams through a short-lived SFTP connection to the exact SSH target configured
 for that Core machine. It uses the existing SSH configuration and batch

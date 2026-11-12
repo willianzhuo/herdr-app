@@ -293,6 +293,9 @@ export default class Files extends View {
         .child(div().id("files-root-path").flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).tooltip(this.file ?? this.root ?? "")
           .when(!this.file && !this.detached && Boolean(this.root), el => el.on_mouse_down("right", (_e, cx) => this.pathMenu("", cx)))
           .child(this.file ?? this.root?.split(/[\\/]/).pop() ?? ""))
+        .when(!this.detached, el => el.child(div().id("files-downloads").px(7).py(4).rounded(5).flex_none().text_size(12).cursor_pointer().text_color(t.muted)
+          .tooltip("查看下载任务和进度").hover(s => s.bg(t.hover))
+          .on_click(() => openOverlay({ mod:"file-download", kind:"window", key:"file-download-history", width:360, props:{role:"history"} })).child("下载")))
         .when(Boolean(this.file), el => el.child(div().id("files-refresh").w(20).flex_none().text_size(16).cursor_pointer().text_color(t.muted).tooltip("Refresh file")
           .on_click((_e, cx) => { this.loadFile(cx); cx.notify(); }).child("↻"))))
       .when(!this.detached, el => el

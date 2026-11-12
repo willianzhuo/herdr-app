@@ -177,6 +177,11 @@ function previewHarness(reader: () => Promise<string | null>, fixed?: any) {
 
 const panelSource = await readFile(new URL("../defaults/mods/file-panel/main.js",import.meta.url),"utf8");
 
+test("Files keeps a download-history entry available after the progress float is closed",()=>{
+  const h=previewHarness(async()=>"");h.click("files-downloads");
+  expect(h.overlays).toEqual([{mod:"file-download",kind:"window",key:"file-download-history",width:360,props:{role:"history"}}]);
+});
+
 test("Markdown defaults to selectable rendered preview and switches to read-only source without rereading", async () => {
   const text="# 标题\n\n**Bold** and `code`\n\n- first\n- second\n\n```js\nconst answer = 42;\n```";
   const h=previewHarness(async()=>text);

@@ -1,5 +1,6 @@
 {
   "id": "root",
+  "floating": [{ "id": "file-download-progress", "content": { "mod": "file-download", "props": { "role": "progress" } }, "edge": "bottom", "align": "end" }],
   "type": "row",
   "titlebar": "none",
   "traffic_lights": [

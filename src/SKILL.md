@@ -43,6 +43,15 @@ Remote data uses SFTP on the machine's configured SSH target; Core still prepare
 metadata/archives and verifies the source. The dialog shows the transport and
 offers 兼容模式 before starting. Missing SFTP, custom `--via` routes or unsupported
 paths use Core with a visible reason. SFTP failures do not silently retry via Core.
+The bottom-right 下载 float keeps progress visible after details close. Click a
+task to reopen its existing job, 收起/展开 to compact the list, or × to dismiss a
+finished result. Recent completed/failed results remain for 24 hours (up to 20).
+The header × hides the whole float without cancelling. Files → 下载 opens the
+task list again; 清除已结束 removes finished results only. New downloads show
+the float again, and the history window can be closed independently.
+Shipped layouts include `{mod:"file-download", props:{role:"progress"}}` as a
+root floating block at `edge:"bottom", align:"end"`; add it to personal layouts
+to enable the same view there. No active worker is cancelled by these controls.
 Files can open a selected file as a panel or a new tab. The `file-panel` mod
 uses `{path, on, title, folder}` props to pin its file and machine; it does not
 follow terminal focus or write the file. Markdown has Preview / Source modes.

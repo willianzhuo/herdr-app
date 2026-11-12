@@ -327,10 +327,50 @@ def start(home, spec):
     return state
 
 
+def list_jobs(home):
+    jobs = []
+    root = Path(home) / 'file-downloads'
+    if not root.is_dir():
+        return {'jobs':jobs}
+    for folder in root.iterdir():
+        if not re.fullmatch(r'[a-f0-9]{32}', folder.name) or folder.is_symlink() or not folder.is_dir():
+            continue
+        try:
+            if (folder / 'dismissed').exists():
+                continue
+            state = json.loads((folder / 'state.json').read_text())
+            spec = json.loads((folder / 'request.json').read_text())
+            started = (folder / 'request.json').stat().st_mtime
+            if state.get('id') != folder.name or not isinstance(spec.get('path'), str):
+                continue
+            if state.get('phase') in ('complete', 'error') and time.time() - state.get('updated', started) > 86400:
+                continue
+            jobs.append({**state, 'started':started, 'source':{key:spec.get(key) for key in ('path', 'on', 'directory')}, 'destination':spec.get('destination')})
+        except (OSError, ValueError, TypeError):
+            continue
+    jobs.sort(key=lambda j:(j.get('phase') in ('complete', 'error'), -j['started']))
+    active = [j for j in jobs if j.get('phase') not in ('complete', 'error')]
+    recent = [j for j in jobs if j.get('phase') in ('complete', 'error')][:20]
+    return {'jobs':active + recent}
+
+
+def dismiss(home, job):
+    folder = job_folder(home, job)
+    state = json.loads((folder / 'state.json').read_text())
+    if state.get('phase') not in ('complete', 'error'):
+        raise ValueError('A running download cannot be dismissed')
+    (folder / 'dismissed').touch(mode=0o600)
+    return {'dismissed':job}
+
+
 def main():
     op, home, value = sys.argv[1:4]
     if op == 'start':
         return start(home, json.loads(value))
+    if op == 'list':
+        return list_jobs(home)
+    if op == 'dismiss':
+        return dismiss(home, value)
     folder = job_folder(home, value)
     if op == 'status':
         return json.loads((folder / 'state.json').read_text())

@@ -246,6 +246,30 @@ class DownloadTests(unittest.TestCase):
                 self.assertIsNone(explicit.select_transport())
             self.assertEqual(explicit.state['transport'], 'Core')
 
+    def test_progress_listing_recovers_jobs_and_only_dismisses_finished_results(self):
+        home = self.root / 'home'
+        self.assertEqual(download.list_jobs(home), {'jobs':[]})
+        def saved(index, phase, updated):
+            ident = f'{index:032x}'
+            folder = download.job_folder(home, ident)
+            folder.mkdir(parents=True)
+            download.atomic_json(folder / 'state.json', {'id':ident, 'phase':phase, 'updated':updated, 'bytes':7, 'total':10})
+            download.atomic_json(folder / 'request.json', {'path':'/work/source', 'on':'814', 'directory':False, 'destination':str(self.dest)})
+            return ident
+        active = saved(1, 'downloading', 0)
+        complete = saved(2, 'complete', time.time())
+        saved(3, 'complete', time.time() - 86401)
+        corrupt = home / 'file-downloads' / ('f' * 32)
+        corrupt.mkdir();(corrupt / 'state.json').write_text('{')
+        rows = download.list_jobs(home)['jobs']
+        self.assertEqual([j['id'] for j in rows], [active, complete])
+        self.assertEqual(rows[0]['source'], {'path':'/work/source', 'on':'814', 'directory':False})
+        self.assertEqual(rows[0]['destination'], str(self.dest))
+        with self.assertRaises(ValueError): download.dismiss(home, active)
+        self.assertEqual(download.dismiss(home, complete), {'dismissed':complete})
+        self.assertEqual([j['id'] for j in download.list_jobs(home)['jobs']], [active])
+        with self.assertRaises(ValueError): download.dismiss(home, '../outside')
+
 
 if __name__ == '__main__':
     unittest.main()
