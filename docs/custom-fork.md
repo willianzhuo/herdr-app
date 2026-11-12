@@ -243,6 +243,11 @@ Install `defaults/mods/file-path-menu` in the same app home's `mods/` directory
 for the path menu, and `defaults/mods/file-download` for download dialogs and the
 Python worker. Fixed file panels retain their file and machine;
 the directory navigation bar is only shown in Files.
+When hot-loading into an older installed binary that already ships the path
+menu, use a personal menu copy such as `file-actions-custom`, and change the
+personal Files copy's `openOverlay` target from `file-path-menu` to that name.
+Keep the older shipped menu intact: restarting the app restores shipped names
+and moves edits aside, without rewriting these JavaScript mod references.
 
 ## Branches and remotes
 
