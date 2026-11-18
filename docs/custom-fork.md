@@ -152,7 +152,19 @@ to a session replaces the summary with that specific session's state.
 The CLI's coarse `state` is authoritative even when its process `status` is idle
 between autonomous steps: working stays working, blocked stays Needs you, done
 stays done (idle in the focused sidebar row), and failed/stopped need attention.
-Native OSC reports take priority. Sidebar, tab rollups and framed pane headers
+Native OSC reports normally take priority. A narrow exception handles Claude's
+`N shell(s) still running` working report after its foreground response finished.
+The same process/profile's interactive registry row must match the foreground
+PID and its Linux process start time. Its exact session transcript must contain
+an `end_turn` text response followed by a matching `turn_duration` record. The
+bounded read rejects a new user/API/queue event, a partial or changing file,
+ambiguous ownership and stale native reports. This shows Done (Idle in a focused
+sidebar row) with the remaining background-shell count in the tooltip; no shell
+is cancelled. Ordinary working/blocked reports retain their status. This is a
+local display correction; `hc` and native notifications retain the actual OSC
+report, and a new turn removes the correction on the next refresh.
+
+Sidebar, tab rollups and framed pane headers
 share a cache bound to address, foreground PID, terminal creation and current
 title. Polls batch by machine/profile about every five seconds; cached entries
 expire after 12 seconds and stale in-flight reads cannot follow a session switch.

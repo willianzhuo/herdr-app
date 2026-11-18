@@ -230,8 +230,12 @@ the highlighted line shows where it will land.
   Claude Dashboard with profile-wide working/needs-input counts. Its tooltip
   explains that these sessions span the profile, not just the containing space.
   Waiting takes priority over working; a dashboard with no live work is idle.
-  Agents, tab rollups and pane headers use this fallback only without a native
-  report. `claude.session-status` is keyed by full address, foreground PID,
+  Native reports normally take precedence. For the exact native message
+  `N shell(s) still running`, a PID-matched interactive registry entry plus its
+  completed transcript turn can instead show Done (Idle after focus), with a
+  tooltip that background shells remain running. A later prompt/API request,
+  changed report/process, incomplete or unreadable log keeps the native status.
+  This is display-only; no shell is stopped. `claude.session-status` is keyed by full address, foreground PID,
   creation time and title, expires after 12 seconds, and is invalidated by a
   session switch. Python 3 and readable `/proc` process metadata are required.
   No prompt, hook, job file, core status or running process is modified.

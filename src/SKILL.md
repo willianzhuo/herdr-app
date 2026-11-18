@@ -68,6 +68,11 @@ about every five seconds. A Claude Agent View dashboard shows the profile-wide
 working/needs-input summary as Claude Dashboard, with its scope in the tooltip;
 it is not treated as one attached session. This display fallback does not modify native core
 status or notifications, inject input, install hooks or restart any process.
+For a native `N shell(s) still running` working report, the display additionally
+matches the interactive session by PID and verifies its completed transcript turn.
+Agents, tabs and pane headers show Done/Idle with the background-shell count in
+the tooltip. A new prompt/API request or an uncertain/missing proof keeps the
+native status. Background commands continue running.
 
 ## Show something when asked
 

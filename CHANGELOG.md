@@ -1,5 +1,10 @@
 # Herdr changelog
 
+## [Unreleased]
+
+### Fixed
+- Claude sessions show their completed foreground response instead of spinning solely because a background shell remains running; the tooltip preserves the background-task information.
+
 ## [0.1.13.13] - 2026-11-12
 <!-- spotlight macos -->
 

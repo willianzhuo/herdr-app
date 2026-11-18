@@ -114,3 +114,67 @@ test("sandboxed views and the personal tab example share the same Claude adapter
   for(const path of ["defaults/mods/tabs/claude-status.js","defaults/mods/pane/claude-status.js","defaults/mods/terminals-pane/claude-status.js","personal-config/claude-status.js"])
     expect(readFileSync(new URL(`../${path}`,import.meta.url),"utf8")).toBe(canonical);
 });
+
+test("a verified completed foreground turn replaces only a shell-only working report",()=>{
+  const t={...terminal(),status:"working",turn:8,report:{app:"claude-code",msg:"2 shells still running"}};
+  const proof={...entry(t,"done"),scope:"interactive",completedTurn:"turn-one",nativeKey:JSON.stringify(["working","claude-code","2 shells still running",8]),detail:"回答完成；后台 2 个 shell"};
+  const cache={[t.address]:proof};
+  expect(claudeStatus(t,"working",cache)).toBe("done");
+  expect(claudeAgents([{address:t.address,status:"working",focused:false}],[t],cache)[0]).toMatchObject({status:"done",statusDetail:proof.detail});
+  expect(claudeAgents([{address:t.address,status:"working",focused:true}],[t],cache)[0].status).toBe("idle");
+  expect(claudeTabStatus({id:"tab",status:"working"},[{tab:"tab",terminal:t.address,status:"working"}],new Map([[t.address,t]]),cache)).toBe("done");
+  expect(claudeStatus(t,"blocked",cache)).toBe("blocked");
+  for(const changed of [{...t,turn:9},{...t,report:{app:"claude-code",msg:"Thinking"}}, {...t,status:"blocked"}, {...t,status:null}, {...t,title:"new session"}])
+    expect(claudeSession(changed,cache)).toBeNull();
+  expect(claudeStatus(t,"working",{[t.address]:{...proof,scope:"dashboard"}})).toBe("working");
+  expect(claudeStatus(t,"working",{[t.address]:{...proof,at:Date.now()-12001}})).toBe("working");
+});
+
+test("shell-only probes cannot overwrite a newer native report while in flight",async()=>{
+  const t={...terminal(),status:"working",turn:3,report:{app:"claude-code",msg:"1 shell still running"}};
+  let all=[t];const values=new Map(),tasks:any[]=[];
+  const api={terminals:()=>all,shared:(k:any)=>values.get(k),setShared:(k:any,v:any)=>values.set(k,v),exec:async(_cmd:any,args:any)=>{
+    const items=JSON.parse(args[2]);expect(items).toHaveLength(1);
+    all=[{...t,turn:4,report:{app:"claude-code",msg:"Thinking"}}];
+    return {code:0,stdout:JSON.stringify({[t.address]:{...items[0],scope:"interactive",session:"session",status:"done"}})};
+  }};
+  new ClaudeStatus(api).refresh({spawn:(fn:any)=>tasks.push(fn({notify(){}}))});await Promise.all(tasks);
+  expect(values.get(CLAUDE_KEY)).toEqual({});
+});
+
+test("production probe proves foreground completion by PID and transcript, never by idle time or screen text",()=>{
+  const root=mkdtempSync(join(tmpdir(),"herdr-claude-completed-"));
+  try {
+    const proc=join(root,"proc"),p=join(proc,"11"),config=join(root,"profile"),project=join(config,"projects","-opt-tiger-work");
+    mkdirSync(p,{recursive:true});mkdirSync(project,{recursive:true});writeFileSync(join(proc,"stat"),"btime 1000\n");
+    const cli=join(root,"claude"),fixture=join(root,"agents.json");
+    writeFileSync(cli,`#!/usr/bin/python3\nimport json,os,sys\nassert sys.argv[1:] == ['agents','--json','--all']\nprint(open(os.environ['FIXTURE']).read())\n`);chmodSync(cli,0o755);
+    symlinkSync(cli,join(p,"exe"));writeFileSync(join(p,"cmdline"),"claude\0");
+    writeFileSync(join(p,"stat"),`11 (Claude) S ${Array(18).fill("0").join(" ")} 999 0`);
+    writeFileSync(join(p,"environ"),`HOME=${root}\0CLAUDE_CONFIG_DIR=${config}\0FIXTURE=${fixture}\0`);
+    const ticks=Number(spawnSync("python3",["-c","import os;print(os.sysconf('SC_CLK_TCK'))"],{encoding:"utf8"}).stdout);
+    const session="00000000-1111-2222-3333-444444444444",path=join(project,session+".jsonl");
+    const row={pid:11,kind:"interactive",sessionId:session,cwd:"/opt/tiger/work",name:"work-generic",status:"busy",startedAt:(1000+999/ticks)*1000+500};
+    const item={address:"200/t1",pid:11,created:123,title:"Own session",nativeStatus:"working",nativeMessage:"2 shells still running",nativeKey:"native-one"};
+    const event=(type:string,other:any={})=>({type,sessionId:session,...other});
+    const assistant=event("assistant",{uuid:"answer",message:{stop_reason:"end_turn",content:[{type:"text",text:"Finished"}]}});
+    const done=event("system",{uuid:"finished-turn",parentUuid:"answer",subtype:"turn_duration",durationMs:1000});
+    const events=[event("user"),event("api-request",{querySource:"repl_main_thread"}),assistant,done,event("system",{subtype:"away_summary"})];
+    const probe=CLAUDE_PROBE.replace('PROC_ROOT = Path("/proc")',`PROC_ROOT = Path(${JSON.stringify(proc)})`);
+    const run=(records:any[]=events,rows:any[]=[row],suffix="")=>{
+      writeFileSync(fixture,JSON.stringify(rows));writeFileSync(path,records.map(e=>JSON.stringify(e)).join("\n")+"\n"+suffix);
+      const r=spawnSync("python3",["-c",probe,JSON.stringify([item])],{encoding:"utf8"});expect(r.status).toBe(0);return JSON.parse(r.stdout)[item.address];
+    };
+    expect(run()).toMatchObject({scope:"interactive",session,status:"done",backgroundShells:2,name:"Own session",completedTurn:"finished-turn"});
+    for(const next of [event("user"),event("api-request",{querySource:"repl_main_thread"}),event("queue-operation"),event("assistant",{message:{stop_reason:"tool_use"}})])
+      expect(run([...events,next])).toBeUndefined();
+    expect(run([event("assistant",{...assistant,message:{stop_reason:"end_turn",content:[{type:"thinking"}]}}),done])).toBeUndefined();
+    expect(run([assistant])).toBeUndefined();
+    expect(run(events,[row],'{"type":"user"')).toBeUndefined();
+    expect(run(events,[{...row,pid:12}])).toBeUndefined();
+    expect(run(events,[row,{...row,sessionId:"different"}])).toBeUndefined();
+    expect(run(events,[{...row,startedAt:1}])).toBeUndefined();
+    expect(run(events,[{kind:"background",state:"done",sessionId:session,name:item.title}])).toBeUndefined();
+    expect(run([event("system",{padding:"x".repeat(600000)}),...events])?.status).toBe("done");
+  } finally {rmSync(root,{recursive:true,force:true});}
+});

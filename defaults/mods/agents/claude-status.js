@@ -1,5 +1,5 @@
-// Read-only fallback for Claude Agent View sessions, which do not emit OSC 7501.
-// Match the current terminal title exactly; never infer a session from its cwd.
+// Read-only Claude session status. Background views match exact titles; a
+// shell-only native working report needs PID-bound proof of a finished turn.
 export const CLAUDE_KEY = "claude.session-status";
 export const CLAUDE_PROBE = String.raw`import json, os, re, subprocess, sys
 from pathlib import Path
@@ -60,6 +60,69 @@ def select(rows, item):
     return {"session":row["sessionId"], "job":row.get("id"), "name":str(row["name"])[:240],
             "status":state, "waitingFor":str(row.get("waitingFor") or "")[:160]}
 
+def completed_turn(config, row):
+    session = row.get("sessionId")
+    if not isinstance(session, str) or not re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", session):
+        return None
+    base = Path(config) / "projects"
+    path = base / re.sub(r"[^A-Za-z0-9]", "-", str(row.get("cwd") or "")) / (session + ".jsonl")
+    if not path.is_file():
+        # Exact session id only; shared cwd or a similar name is never proof.
+        from itertools import islice
+        paths = list(islice(base.glob("*/" + session + ".jsonl"), 2))
+        if len(paths) != 1:
+            return None
+        path = paths[0]
+    def signature(s): return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+    with path.open("rb") as f:
+        before = os.fstat(f.fileno())
+        offset = max(0, before.st_size - 524288)
+        f.seek(offset)
+        if offset: f.readline(524288)  # Discard the first partial JSON line.
+        data = f.read(524288)
+        after = os.fstat(f.fileno())
+    if signature(before) != signature(after) or signature(after) != signature(path.stat()) or not data.endswith(b"\n"):
+        return None
+    assistant, done = None, None
+    for line in data.splitlines():
+        event = json.loads(line)
+        if not isinstance(event, dict): return None
+        if event.get("isSidechain"): continue
+        kind = event.get("type")
+        if kind in ("user", "assistant", "api-request", "queue-operation") and event.get("sessionId") != session:
+            return None
+        if event.get("sessionId") != session: continue
+        if kind in ("user", "queue-operation") or (kind == "api-request" and event.get("querySource") != "away_summary"):
+            assistant, done = None, None
+        elif kind == "assistant":
+            assistant, done = event, None
+        elif kind == "system" and event.get("subtype") == "turn_duration":
+            done = None
+            message = (assistant or {}).get("message") or {}
+            if (assistant and assistant.get("uuid") and event.get("parentUuid") == assistant["uuid"]
+                and message.get("stop_reason") == "end_turn"
+                and any(isinstance(c, dict) and c.get("type") == "text" and c.get("text") for c in message.get("content", []))):
+                done = {"completedTurn":event.get("uuid"), "completedAt":event.get("timestamp")}
+    return done
+
+def interactive_done(rows, item, config):
+    match = re.fullmatch(r"([1-9][0-9]*) shells? still running", str(item.get("nativeMessage") or ""))
+    if item.get("nativeStatus") != "working" or not match: return None
+    matches = [r for r in rows if isinstance(r, dict) and r.get("kind") == "interactive" and r.get("pid") == item["pid"]]
+    if len(matches) != 1: return None
+    row = matches[0]
+    # Registry PID reuse must not bind an old session to a new Claude process.
+    boot = next(int(line.split()[1]) for line in (PROC_ROOT / "stat").read_text().splitlines() if line.startswith("btime "))
+    started = (boot + int(identity(item["pid"])) / os.sysconf("SC_CLK_TCK")) * 1000
+    if not isinstance(row.get("startedAt"), (int, float)) or not 0 <= row["startedAt"] - started < 120000:
+        return None
+    proof = completed_turn(config, row)
+    if not proof or not proof.get("completedTurn"): return None
+    count = int(match[1])
+    return dict(proof, session=row["sessionId"], scope="interactive", status="done", backgroundShells=count,
+                name=title(item["title"]), nativeKey=item.get("nativeKey"),
+                detail="当前回答已完成；后台仍有 " + str(count) + " 个 shell 运行（未停止）")
+
 def probe(items):
     result, profiles = {}, {}
     if not PROC_ROOT.is_dir():
@@ -83,9 +146,13 @@ def probe(items):
             if not isinstance(rows, list):
                 continue
             for item, proc, start, _ in group:
-                entry = select(rows, item)
-                if entry and identity(item["pid"]) == start:
-                    result[item["address"]] = dict(entry, pid=item["pid"], created=item.get("created"), title=item["title"])
+                try:
+                    config = env.get("CLAUDE_CONFIG_DIR", str(Path(env["HOME"]) / ".claude"))
+                    entry = interactive_done(rows, item, config) if item.get("nativeStatus") else select(rows, item)
+                    if entry and identity(item["pid"]) == start:
+                        result[item["address"]] = dict(entry, pid=item["pid"], created=item.get("created"), title=item["title"])
+                except (OSError, ValueError, IndexError, TypeError, StopIteration):
+                    pass
         except (OSError, ValueError, IndexError, subprocess.SubprocessError):
             pass
     return result
@@ -94,15 +161,24 @@ if __name__ == "__main__":
     print(json.dumps(probe(json.loads(sys.argv[1])), ensure_ascii=False))
 `;
 
+const nativeKey = terminal => JSON.stringify([terminal?.status ?? null, terminal?.report?.app ?? null, terminal?.report?.msg ?? null, terminal?.turn ?? null]);
+const shellOnly = terminal => terminal?.status === "working" && terminal.report?.app === "claude-code"
+  && /^[1-9][0-9]* shells? still running$/.test(terminal.report?.msg ?? "");
+
 export function claudeSession(terminal, cache) {
-  if (terminal?.program?.key !== "claude" || terminal.state !== "live" || terminal.status != null) return null;
+  if (terminal?.program?.key !== "claude" || terminal.state !== "live") return null;
   const item = cache?.[terminal.address];
+  if (item?.scope === "interactive") {
+    if (!shellOnly(terminal) || item.nativeKey !== nativeKey(terminal) || item.status !== "done" || !item.completedTurn) return null;
+  } else if (terminal.status != null) return null;
   return item && item.pid === terminal.foreground?.pid && item.created === terminal.created_ms
     && item.title === terminal.title && Date.now() - item.at < 12000 ? item : null;
 }
 
 export function claudeStatus(terminal, fallback, cache) {
-  return fallback && fallback !== "unknown" ? fallback : claudeSession(terminal, cache)?.status ?? fallback;
+  const item = claudeSession(terminal, cache);
+  if (fallback === "working" && item?.scope === "interactive") return item.status;
+  return fallback && fallback !== "unknown" ? fallback : item?.status ?? fallback;
 }
 
 export function claudeAgents(rows, all, cache) {
@@ -129,12 +205,12 @@ export class ClaudeStatus {
     if (this.busy || !cx?.spawn) return;
     const { terminals, shared, setShared, exec } = this.api;
     const all = terminals().filter(t => t.state === "live" && t.program?.key === "claude"
-      && t.status == null && t.foreground?.pid && t.title);
+      && (t.status == null || shellOnly(t)) && t.foreground?.pid && t.title);
     if (!all.length) {
       if (Object.keys(shared(CLAUDE_KEY) ?? {}).length) setShared(CLAUDE_KEY, {});
       return;
     }
-    const fingerprint = JSON.stringify(all.map(t => [t.address, t.foreground.pid, t.created_ms, t.title]));
+    const fingerprint = JSON.stringify(all.map(t => [t.address, t.foreground.pid, t.created_ms, t.title, nativeKey(t)]));
     const lease = shared("claude.status-probe");
     if (lease?.fingerprint === fingerprint && Date.now() - lease.at < 5000) return;
     setShared("claude.status-probe", { fingerprint, at:Date.now() });
@@ -142,7 +218,8 @@ export class ClaudeStatus {
     for (const t of all) {
       const on = t.address.includes("/") ? t.address.split("/")[0] : "";
       if (!groups.has(on)) groups.set(on, []);
-      groups.get(on).push({ address:t.address, pid:t.foreground.pid, created:t.created_ms, title:t.title });
+      groups.get(on).push({ address:t.address, pid:t.foreground.pid, created:t.created_ms, title:t.title,
+        nativeStatus:t.status ?? null, nativeMessage:t.report?.msg ?? null, nativeKey:nativeKey(t) });
     }
     this.busy = true;
     cx.spawn(async cx => {
@@ -157,7 +234,7 @@ export class ClaudeStatus {
           const cache = { ...shared(CLAUDE_KEY) };
           for (const item of items) {
             const t = live.get(item.address), entry = found?.[item.address];
-            if (t?.foreground?.pid !== item.pid || t.created_ms !== item.created || t.title !== item.title) continue;
+            if (t?.foreground?.pid !== item.pid || t.created_ms !== item.created || t.title !== item.title || nativeKey(t) !== item.nativeKey) continue;
             if (entry?.pid === item.pid && entry.created === item.created && entry.title === item.title
               && typeof entry.session === "string" && ["working", "blocked", "done", "idle"].includes(entry.status))
               cache[item.address] = { ...entry, at:Date.now() };

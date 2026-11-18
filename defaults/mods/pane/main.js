@@ -49,7 +49,8 @@ export default class Pane extends View {
     const p = this.me();
     if (!p) return div();
     const terminal = terminals().find(t => t.address === p.terminal);
-    const name = claudeSession(terminal, shared(CLAUDE_KEY))?.name || sessionTitle(terminal, shared(SESSION_KEY)) || ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
+    const claude = claudeSession(terminal, shared(CLAUDE_KEY));
+    const name = claude?.name || sessionTitle(terminal, shared(SESSION_KEY)) || ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
     const pic = icon(p.program, 14, t.dim);
     const st = claudeStatus(terminal, p.status, shared(CLAUDE_KEY));
     const pane = p.pane;
@@ -70,7 +71,7 @@ export default class Pane extends View {
       .child(div().flex_1().truncate().text_color(t.dim).child(folder(p.cwd)))
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
-      .when(st === "done", el => el.child(div().size(7).flex_none().rounded(4).bg(t.done)))
+      .when(st === "done", el => el.child(div().size(7).flex_none().rounded(4).bg(t.done).tooltip(claude?.detail || "Done")))
       .when(this.hovered, el => el
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
