@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [0.1.13.14] - 2026-11-19
+<!-- spotlight macos -->
+
 ### New
 - **Zoom a panel under the pointer.** Use the existing zoom shortcuts over a terminal or file panel to adjust its content size. The same shortcuts over the app chrome adjust the whole app.
 - **Open a file by path.** The Files address bar accepts both file and folder paths on the current machine. Opening a file shows a preview and sets Files to its parent folder.
