@@ -7,11 +7,12 @@
 
 use crate::error::{Result as ShellResult, ShellError};
 use gpui::{Hsla, Pixels, px, rgba};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::{cell::Cell, sync::atomic::{AtomicU32, Ordering}};
 
 // HERDR: one app-wide zoom applied to every pixel length a script writes, so
 // zooming the host app zooms every script view with it.
 static PIXEL_SCALE: AtomicU32 = AtomicU32::new(0x3f80_0000); // 1.0
+thread_local! { static LOCAL_SCALE: Cell<f32> = const { Cell::new(1.0) }; }
 
 /// Sets the zoom applied to script pixel lengths (1 = as written).
 pub fn set_pixel_scale(scale: f32) {
@@ -19,7 +20,21 @@ pub fn set_pixel_scale(scale: f32) {
 }
 
 pub(crate) fn scaled_px(value: f32) -> Pixels {
-    px(value * f32::from_bits(PIXEL_SCALE.load(Ordering::Relaxed)))
+    px(value * f32::from_bits(PIXEL_SCALE.load(Ordering::Relaxed)) * local_pixel_scale())
+}
+
+pub(crate) fn local_pixel_scale() -> f32 {
+    LOCAL_SCALE.get()
+}
+
+/// Apply a host's local content scale for one synchronous element pass.
+pub fn with_pixel_scale<R>(factor: f32, f: impl FnOnce() -> R) -> R {
+    struct Restore(f32);
+    impl Drop for Restore {
+        fn drop(&mut self) { LOCAL_SCALE.set(self.0); }
+    }
+    let _restore = Restore(LOCAL_SCALE.replace(local_pixel_scale() * factor));
+    f()
 }
 
 /// A script argument after bridging, stored in the spec arena.

@@ -42,6 +42,8 @@ pub struct View {
     tabs: BTreeMap<String, TabView>,
     recent: Vec<Recent>,
     attention: BTreeMap<String, Seen>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) pane_zoom: BTreeMap<String, i8>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -147,6 +149,7 @@ impl View {
             spaces: model.spaces.iter().map(|s| (s.id.clone(), s.active.clone())).collect(),
             tabs: model.tabs().map(|t| (t.id.clone(), TabView { focused: t.focused.clone(), before: t.before.clone(), zoomed: t.zoomed.clone(), settled: t.settled })).collect(),
             attention: model.agents.iter().map(|(a, s)| (a.clone(), Seen { word: s.word.clone(), seen: s.seen })).collect(),
+            pane_zoom: BTreeMap::new(),
         }
     }
 

@@ -37,7 +37,7 @@ pub(in crate::materialize) fn editor(
         .unwrap_or_else(|| typography.mono.clone());
     let font_size = font_size
         .map(crate::value::scaled_px)
-        .unwrap_or(typography.mono_md.size);
+        .unwrap_or_else(|| typography.mono_md.size * crate::value::local_pixel_scale());
     let focus_target = state.clone();
     let mut frame = InputBase::new(("gpui-shell-editor", handle))
         .flex()

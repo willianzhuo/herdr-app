@@ -47,28 +47,46 @@ async function directory(path, on) {
   return out;
 }
 
-async function resolveFolder(path, base, on) {
-  const windowsFolder = async () => {
+async function resolvePath(path, base, on) {
+  const resolved = r => {
+    const [kind, root, name] = (r.stdout || "").split("\0");
+    if (r.code !== 0 || !root || (kind !== "d" && !(kind === "f" && name)))
+      throw new Error(r.stderr || "Cannot open this path");
+    return { root, file: kind === "f" ? name : null };
+  };
+  const windowsPath = async () => {
     const quote = value => "'" + value.replace(/['‘’‚‛]/g, "$&$&") + "'";
     const script = "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p,$base) "
       + "if ($p -eq '~') { $p=$HOME } elseif ($p.StartsWith('~/') -or $p.StartsWith('~\\')) { $p=[IO.Path]::Combine($HOME,$p.Substring(2)) } "
       + "elseif (-not [IO.Path]::IsPathRooted($p)) { $p=[IO.Path]::Combine($base,$p) }; "
-      + "$item=Get-Item -LiteralPath $p -Force -ErrorAction Stop; if (-not $item.PSIsContainer) { throw 'Not a folder' }; "
-      + "[Console]::Write($item.FullName) } " + quote(path) + " " + quote(base || "");
-    const r = await exec("powershell", ["-NoProfile", "-Command", script], { on });
-    if (r.code !== 0 || !r.stdout) throw new Error(r.stderr || "Cannot open this folder");
-    return r.stdout;
+      + "$item=Get-Item -LiteralPath $p -Force -ErrorAction Stop; "
+      + "if ($item.PSIsContainer) { $parts=@('d',$item.FullName,'') } "
+      + "elseif ($item -is [IO.FileInfo] -and [IO.File]::Exists($item.FullName)) { $parts=@('f',$item.DirectoryName,$item.Name) } "
+      + "else { throw 'Not a file or folder' }; "
+      + "[Console]::Write(($parts -join [char]0)) } " + quote(path) + " " + quote(base || "");
+    const r = await exec("powershell", ["-NoProfile", "-Command", script], { on, timeout: 10000 });
+    return resolved(r);
   };
-  if (!on && window()?.platform === "windows") return windowsFolder();
-  const script = 'case "$1" in "~") p=$HOME ;; "~/"*) p=$HOME/${1#??} ;; /*) p=$1 ;; *) p=$2/$1 ;; esac; CDPATH=; export CDPATH; cd -L "$p" && pwd -L';
+  if (!on && window()?.platform === "windows") return windowsPath();
+  const script = `case "$1" in "~") p=$HOME ;; "~/"*) p=$HOME/\${1#??} ;; /*) p=$1 ;; *) p=\${2%/}/$1 ;; esac
+CDPATH=; export CDPATH
+if [ -d "$p" ]; then
+  cd -L "$p" && printf 'd\\0%s\\0' "$PWD"
+elif [ -f "$p" ]; then
+  dir=\${p%/*}/
+  case "$dir" in */../*) cd -P "$dir" ;; *) cd -L "$dir" ;; esac &&
+    printf 'f\\0%s\\0%s' "$PWD" "\${p##*/}"
+else
+  printf '%s\\n' 'Path does not name an existing file or folder' >&2
+  exit 1
+fi`;
   let r;
-  try { r = await exec("sh", ["-c", script, "files-path", path, base || "/"], { on }); }
+  try { r = await exec("sh", ["-c", script, "files-path", path, base || "/"], { on, timeout: 10000 }); }
   catch (e) {
-    if (on && String(e).includes("cannot start sh: program not found")) return windowsFolder();
+    if (on && String(e).includes("cannot start sh: program not found")) return windowsPath();
     throw e;
   }
-  if (r.code !== 0 || !r.stdout) throw new Error(r.stderr || "Cannot open this folder");
-  return r.stdout.replace(/\n$/, "");
+  return resolved(r);
 }
 
 export default class Files extends View {
@@ -76,7 +94,7 @@ export default class Files extends View {
     this.saved = new Map();
     this.roots = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
-    this.pathInput = InputState.new({ placeholder: "输入文件夹路径，回车打开" });
+    this.pathInput = InputState.new({ placeholder: "输入文件或文件夹路径，回车打开" });
     this.pathInput.on("change", (_e, cx) => { this.navigation = null; this.pathError = null; cx.notify(); });
     this.pathInput.on("submit", (_e, cx) => this.navigate(cx));
     this.refresh(cx);
@@ -106,21 +124,21 @@ export default class Files extends View {
 
   navigate(cx) {
     const value = this.pathInput.value(), where = location(), scope = this.scope(where);
-    if (!value.trim()) { this.pathError = "请输入文件夹路径"; cx.notify(); return; }
+    if (!value) { this.pathError = "请输入文件或文件夹路径"; cx.notify(); return; }
     if (this.navigation?.value === value && this.navigation.scope === scope) return;
     const request = { value, scope, base: this.browseLocation().cwd, on: where.on };
     this.navigation = request; this.pathError = null; cx.notify();
     cx.spawn(async cx => {
       try {
-        const root = await resolveFolder(value, request.base, request.on);
+        const {root, file} = await resolvePath(value, request.base, request.on);
         if (this.navigation !== request || this.scope() !== scope || this.pathInput.value() !== value) return;
         this.roots.set(scope, root);
         this.refresh(cx);
-        this.show(null);
-        this.pathInput.set_value(root);
+        this.show(file, cx);
+        this.pathInput.set_value(entryPaths(root, file || "").absolute);
       } catch (e) {
         if (this.navigation === request && this.scope() === scope && this.pathInput.value() === value)
-          this.pathError = `无法打开目录：${e.message ?? e}`;
+          this.pathError = `无法打开路径：${e.message ?? e}`;
       } finally {
         if (this.navigation === request) this.navigation = null;
         cx.notify();
@@ -138,7 +156,7 @@ export default class Files extends View {
 
   async loadFolder(path, context) {
     const { on, cwd: root } = context;
-    const entries = await directory(path ? `${root}/${path}` : root, on);
+    const entries = await directory(entryPaths(root, path).absolute, on);
     if (!this.current(context) || (path && !this.folders.has(path))) return;
     const used = [...this.entries.entries()].filter(([p]) => p !== path).reduce((n, [, e]) => n + e.length, 0);
     this.entries.set(path, entries.slice(0, Math.max(0, Math.min(PER_FOLDER, TOTAL - used))).sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name)));
@@ -224,8 +242,8 @@ export default class Files extends View {
     if (!space) return;
     const tab = space.tabs?.find(t => t.active);
     const pane = panes().find(p => p.tab === tab?.id && p.focused) ?? panes().find(p => p.tab === tab?.id);
-    const title = this.file.split("/").pop(), path = `${this.root}/${this.file}`;
-    const props = { path, on: this.on ?? null, title, folder: path.slice(0, path.lastIndexOf("/")) || "/" };
+    const title = this.file.split("/").pop(), path = entryPaths(this.root, this.file).absolute;
+    const props = { path, on: this.on ?? null, title, folder: this.file.includes("/") ? entryPaths(this.root, this.file.slice(0, this.file.lastIndexOf("/"))).absolute : this.root };
     if (!asTab && pane) run("pane.split", { pane: pane.pane, direction: "right", mod: "file-panel", props });
     else run("tab.new", { space: space.id, name: title, mod: "file-panel", props });
   }
@@ -238,7 +256,7 @@ export default class Files extends View {
     this.reading = true;
     cx.spawn(async cx => {
       try {
-        const text = await readTextFile(`${root}/${path}`, { on });
+        const text = await readTextFile(entryPaths(root, path).absolute, { on });
         if (!current()) return;
         if (text === null) { this.previewError("This file is no longer available"); return; }
         if (text.includes("\0")) { this.previewError("Binary file · no text preview"); return; }
@@ -288,7 +306,10 @@ export default class Files extends View {
     const t = theme();
     return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .when(Boolean(this.file) && !this.detached, el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
+        .when(Boolean(this.file) && !this.detached, el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => {
+          if (this.pathInput.value() === entryPaths(this.root, this.file).absolute) this.pathInput.set_value(this.root);
+          this.show(null); cx.notify();
+        }).child("←")))
         .child(div().font_semibold().child(this.detached ? "File" : "Files"))
         .child(div().id("files-root-path").flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).tooltip(this.file ?? this.root ?? "")
           .when(!this.file && !this.detached && Boolean(this.root), el => el.on_mouse_down("right", (_e, cx) => this.pathMenu("", cx)))

@@ -152,7 +152,11 @@ impl AppWindow {
         let (y, x) = padding(context);
         let size = inset(area, 2.0 * x * zoom, 2.0 * y * zoom);
         let size = pane_size(shown, size, pane, frame, focused, zoom)?;
-        Some(crate::terminal::grid_size(size, crate::terminal::cell_size(window)))
+        Some(crate::terminal::grid_size(size, self.pane_cell_size(pane, window)))
+    }
+
+    fn pane_cell_size(&self, pane: &str, window: &Window) -> Size<Pixels> {
+        crate::terminal::cell_size_at(window, px(settings::font_size() * self.pane_scale(pane)))
     }
 
     /// The block tabs show in, and the area it was last drawn with.
@@ -185,7 +189,7 @@ impl AppWindow {
                 if let Some(t) = self.terms.get(&pane.id)
                     && let Some((cols, rows)) = self.shown_size(tab, &pane.id, window)
                 {
-                    t.view.read(cx).fit(cols, rows, cell, scale);
+                    t.view.read(cx).fit(cols, rows, self.pane_cell_size(&pane.id, window), scale);
                 }
             }
         }

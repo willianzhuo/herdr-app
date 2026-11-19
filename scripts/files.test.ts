@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { readFile, mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
+import { readFile, mkdtemp, mkdir, realpath, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -303,8 +303,8 @@ test("path popup copies its captured value through the local clipboard and suppo
   expect(overlays).toEqual([{mod:"file-download",kind:"dialog",width:520,props:{path:"/remote/work/docs/中文",on:"box",directory:true}}]);
 });
 
-const loadResolver=(execute:Function,platform="linux")=>new Function("exec","window",`${directorySource};return resolveFolder;`)(execute,()=>({platform}));
-test.skipIf(process.platform==="win32")("folder navigation resolves literal, relative, home and symlink paths without shell expansion", async () => {
+const loadResolver=(execute:Function,platform="linux")=>new Function("exec","window",`${directorySource};return resolvePath;`)(execute,()=>({platform}));
+test.skipIf(process.platform==="win32")("Files resolves literal directories and regular files, including symlinks", async () => {
   const root=await mkdtemp(join(tmpdir(),"herdr-path-"));
   const resolve=loadResolver(async(command:string,args:string[])=>{
     const p=Bun.spawn([command,...args],{stdout:"pipe",stderr:"pipe",env:{...process.env,HOME:root}});
@@ -314,27 +314,36 @@ test.skipIf(process.platform==="win32")("folder navigation resolves literal, rel
   try {
     const name="中文 O'Brien $(touch OWNED)\\literal";
     await mkdir(join(root,name));await symlink(name,join(root,"alias"),"dir");
-    expect(await resolve(name,root,null)).toBe(join(root,name));
-    expect(await resolve(join(root,name),"/",null)).toBe(join(root,name));
-    expect(await resolve("~/alias","/",null)).toBe(join(root,"alias"));
-    expect(await resolve("~","/",null)).toBe(root);
+    expect(await resolve(name,root,null)).toEqual({root:join(root,name),file:null});
+    expect(await resolve(join(root,name),"/",null)).toEqual({root:join(root,name),file:null});
+    expect(await resolve("~/alias","/",null)).toEqual({root:join(root,"alias"),file:null});
+    expect(await resolve("~","/",null)).toEqual({root,file:null});
+    const file="a 中文 $(touch OWNED)\nfile.md";
+    await writeFile(join(root,name,file),"text");
+    await symlink(join(name,file),join(root,"link.md"),"file");
+    expect(await resolve(join(root,name,file),"/",null)).toEqual({root:join(root,name),file});
+    expect(await resolve(`~/alias/${file}`,"/",null)).toEqual({root:join(root,"alias"),file});
+    expect(await resolve("link.md",root,null)).toEqual({root,file:"link.md"});
+    await mkdir(join(root,name,"nested"));
+    await symlink(join(name,"nested"),join(root,"nested"),"dir");
+    expect(await resolve(`nested/../${file}`,root,null)).toEqual({root:join(await realpath(root),name),file});
     expect((await directory(root,null)).some((entry:any)=>entry.name==="OWNED")).toBe(false);
-    await writeFile(join(root,"file"),"text");
-    await expect(resolve("file",root,null)).rejects.toThrow();
+    await expect(resolve("link.md/",root,null)).rejects.toThrow();
     await expect(resolve("missing",root,null)).rejects.toThrow();
   } finally {await rm(root,{recursive:true,force:true});}
 });
 
-test("folder navigation keeps remote machine and only falls back for a missing POSIX shell", async () => {
+test("path navigation keeps remote machine and only falls back for a missing POSIX shell", async () => {
   const calls:any[]=[];
   const resolve=loadResolver(async(command:string,args:string[],options:any)=>{
     calls.push({command,args,...options});
     if(command==="sh")throw new Error("cannot start sh: program not found");
-    return {code:0,stdout:"C:\\Work\\中文",stderr:""};
+    return {code:0,stdout:args.at(-1)?.endsWith("'中文' 'C:\\Work'")?"d\0C:\\Work\\中文\0":"f\0C:\\Work\0中文.md",stderr:""};
   });
-  expect(await resolve("中文","C:\\Work","win")).toBe("C:\\Work\\中文");
+  expect(await resolve("中文","C:\\Work","win")).toEqual({root:"C:\\Work\\中文",file:null});
   expect(calls.map(c=>[c.command,c.on])).toEqual([["sh","win"],["powershell","win"]]);
   expect(calls[1].args.at(-1)).toContain("Get-Item -LiteralPath");
+  expect(await resolve("中文.md","C:\\Work","win")).toEqual({root:"C:\\Work",file:"中文.md"});
   const unavailable=loadResolver(async()=>{throw new Error("connection lost");});
   await expect(unavailable("/work","/","box")).rejects.toThrow("connection lost");
 });
@@ -345,12 +354,12 @@ test("Files address bar pins a directory per workspace, validates failures and c
   h.setExec(async(command:string,args:string[],options:any)=>{
     if(command==="sh"&&args[2]==="files-path") {
       requests.push({value:args[3],base:args[4],...options});
-      return args[3]==="missing"?{code:1,stderr:"No such directory"}:{code:0,stdout:"/remote/资料\n"};
+      return args[3]==="missing"?{code:1,stderr:"No such directory"}:{code:0,stdout:"d\0/remote/资料\0"};
     }
     return {code:0,stdout:""};
   });
   h.view.pathInput.set_value("../资料");h.view.pathInput.handlers.get("submit")({},h.cx);await h.flush();
-  expect(requests).toEqual([{value:"../资料",base:"/remote/work",on:"box"}]);
+  expect(requests).toEqual([{value:"../资料",base:"/remote/work",on:"box",timeout:10000}]);
   expect(h.view.root).toBe("/remote/资料");expect(h.view.pathInput.value()).toBe("/remote/资料");
   h.switchFolder();h.nodes();await h.flush();expect(h.view.root).toBe("/remote/资料");
   h.view.pathInput.set_value("missing");h.click("files-path-open");await h.flush();
@@ -362,6 +371,26 @@ test("Files address bar pins a directory per workspace, validates failures and c
   expect(h.nodes().some(n=>n.methods?.get("id")?.[0]==="files-path-follow")).toBe(false);
 });
 
+test("Files opens a remote file path and returns to its parent folder", async () => {
+  const h=previewHarness(async()=>"# 资料");await h.flush();
+  h.setExec(async(_command:string,args:string[],options:any)=>{
+    if(args[2]!=="files-path")return {code:0,stdout:""};
+    expect(args.slice(3)).toEqual(["../资料/Read me.md","/remote/work"]);
+    expect(options.on).toBe("box");
+    return {code:0,stdout:"f\0/remote/资料\0Read me.md"};
+  });
+  h.view.pathInput.set_value("../资料/Read me.md");
+  h.click("files-path-open");await h.flush();
+  expect(h.reads).toEqual([["/remote/资料/Read me.md",{on:"box"}]]);
+  expect(h.nodes().find(n=>n.kind==="markdown").value).toBe("# 资料");
+  expect(h.view.pathInput.value()).toBe("/remote/资料/Read me.md");
+  h.click("files-open-panel");
+  expect(h.runs.at(-1)).toEqual(["pane.split",{pane:"pane",direction:"right",mod:"file-panel",props:{path:"/remote/资料/Read me.md",on:"box",title:"Read me.md",folder:"/remote/资料"}}]);
+  h.click("files-back");
+  expect(h.view.file).toBeNull();
+  expect(h.view.pathInput.value()).toBe("/remote/资料");
+});
+
 test("Files discards pending navigation after workspace switches or input edits", async () => {
   for(const change of ["scope","input"]) {
     const h=previewHarness(async()=>"");await h.flush();
@@ -370,7 +399,7 @@ test("Files discards pending navigation after workspace switches or input edits"
     h.view.pathInput.set_value("/target");h.click("files-path-open");
     if(change==="scope") {h.switchScope("other-machine","other-space");h.nodes();}
     else {h.view.pathInput.set_value("/edited");h.view.pathInput.handlers.get("change")({},h.cx);}
-    finish({code:0,stdout:"/target\n"});
+    finish({code:0,stdout:"f\0/\0target"});
     await h.flush();
     expect(h.view.roots.size).toBe(0);expect(h.view.navigation).toBeNull();
   }

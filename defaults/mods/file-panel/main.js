@@ -23,7 +23,7 @@ export default class FilePanel extends Files {
     this.invalid = !path || split < 0 || split === path.length - 1;
     this.context = {key};
     if (this.invalid) { this.show(null); return; }
-    this.root = path.slice(0, split) || "/";
+    this.root = path.slice(0, windows && split === 2 ? split + 1 : split) || "/";
     this.on = p.on ?? null;
     this.show(path.slice(split + 1), cx);
   }

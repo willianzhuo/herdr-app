@@ -185,12 +185,12 @@ any running Claude or Traex session.
 
 ## Markdown in Files
 
-The Files address bar accepts a folder path on the current machine: press Enter
-or **打开** to browse it. Absolute paths, `~`/`~/…`, and paths relative to the
-current Files root work; missing, inaccessible or non-folder targets show an
-error. Manual navigation stays pinned per machine/workspace for the lifetime
-of the view, even when terminal cwd changes. **跟随终端** resumes automatic
-following. This changes only Files, not the terminal's working directory.
+Enter a file or folder path in the Files address bar on the current machine and
+press Enter or **打开**. Absolute paths, `~`/`~/…`, and paths relative to the
+current Files root work. A file opens in the preview and Back shows its parent
+folder. A missing or inaccessible path shows an error. Manual navigation stays
+pinned per machine/workspace for the lifetime of the view, even when terminal
+cwd changes. **跟随终端** resumes automatic following.
 
 Right-click a file or folder for **复制相对路径** or **复制绝对路径**. The relative
 path starts at the current Files root; the root label's menu copies `.` or its
@@ -294,6 +294,14 @@ menu, use a personal menu copy such as `file-actions-custom`, and change the
 personal Files copy's `openOverlay` target from `file-path-menu` to that name.
 Keep the older shipped menu intact: restarting the app restores shipped names
 and moves edits aside, without rewriting these JavaScript mod references.
+
+## Panel content zoom
+
+Hover a terminal or a file panel and use `Cmd` + `=`/`+` to enlarge, `Cmd` + `-`
+to shrink, or `Cmd` + `0` to reset. The keyboard focus can stay in another
+panel. Use the same shortcuts over the tab bar or sidebar to scale the app.
+The pane's content reflows within its existing frame. Its scale is relative
+to the app scale and is saved by pane ID in the local `view.json`.
 
 ## Branches and remotes
 

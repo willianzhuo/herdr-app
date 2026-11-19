@@ -30,7 +30,7 @@ Older custom DMGs require one manual upgrade to acquire this updater.
 Custom tabs keep a fixed width (default 220px) while their label follows the focused panel.
 Settings → Look → Tab width adjusts it from 160 to 400 px; Reset restores 220 px.
 This mod preference persists in `shared.json` as `tabs.width` and applies immediately.
-Files has a folder address bar (Enter / 打开) on the current machine, accepting
+Files opens files and folders from its address bar (Enter / 打开) on the current machine, accepting
 absolute, home (`~`/`~/…`) and root-relative paths. Manual browsing pins its root
 per machine/workspace until 跟随终端 restores terminal following. Right-click
 a file or folder to copy its relative or absolute filesystem path to the local clipboard;

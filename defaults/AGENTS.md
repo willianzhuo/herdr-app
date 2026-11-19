@@ -270,9 +270,10 @@ only when expanded.
 Right-click a file or folder for **复制相对路径** (relative to the current Files root)
 or **复制绝对路径**; right-click the root label to copy `.` or its absolute path.
 Both write literal filesystem paths to the local clipboard, including for SSH
-machines. The top address bar opens a folder on the current machine with Enter
-or **打开**. It accepts absolute paths, `~`/`~/…`, and paths relative to the
-current Files root. Invalid targets leave the current folder intact. A manual
+machines. The top address bar opens a file or folder on the current machine with
+Enter or **打开**. It accepts absolute paths, `~`/`~/…`, and paths relative to the
+current Files root. A file opens in the preview, and Back shows its parent folder.
+Invalid targets leave the current folder intact. A manual
 root is remembered per machine/workspace while the view lives; **跟随终端**
 restores following the focused terminal's directory. Fixed file panels keep
 their own file/machine and do not show this navigation bar.
@@ -785,8 +786,12 @@ What's about the user, never a look:
 { "zoom": 1, "sounds": { "enabled": true } }
 ```
 
-- `zoom` scales the whole app: terminals, mods, the layout's px sizes
-  (0.5 to 3; the zoom keys change it). Write sizes as designed at zoom 1.
+- `zoom` scales the whole app, including terminals, mods and the layout's px
+  sizes (0.5 to 3). Write sizes as designed at zoom 1. The zoom shortcuts
+  (`Cmd`/`Ctrl` + `=`, `-` or `0`) adjust the content of the panel under the
+  pointer or the whole app over the surrounding UI. Each pane's scale is
+  relative to the app scale and saved locally in `view.json`. The `app.zoom_*`
+  commands still adjust the app scale when invoked directly.
 - `sounds`: `{ "enabled": true, "done": "<file>", "blocked": "<file>" }`.
   When an agent needs the person, or finishes while they aren't looking at
   it, Herdr plays a sound and (unless they're looking) posts a toast that

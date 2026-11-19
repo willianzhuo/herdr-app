@@ -9,6 +9,7 @@ mod floats;
 mod movable;
 mod pane_drag;
 mod pane_size;
+mod pane_zoom;
 mod titlebar;
 
 use crate::layout::{Axis, Background as Paint, Content, Fit, HeaderContent, Kind, Line, Node, PaneFrame, Size as Span};
@@ -381,6 +382,7 @@ pub struct AppWindow {
     /// Mods placed once; later the layout decides where (or whether) they show.
     seen: BTreeSet<String>,
     bounds: Rc<RefCell<HashMap<String, Bounds<Pixels>>>>,
+    pane_zoom: BTreeMap<String, i8>,
     hidden_fit: pane_size::HiddenFit,
     drag: Option<Drag>,
     written_layout: String,
@@ -466,6 +468,7 @@ impl AppWindow {
         mods::note_fonts(cx);
         mods::set_shared("pane.dragging".into(), Value::Null);
         let seen = std::fs::read_to_string(file("seen.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+        let initial_view: Option<crate::mirror::View> = std::fs::read_to_string(file("view.json")).ok().and_then(|s| serde_json::from_str(&s).ok());
         let mut w = AppWindow {
             core,
             runtime,
@@ -490,6 +493,7 @@ impl AppWindow {
             folders: mods::scan().into_iter().map(|f| (f.id.clone(), f)).collect(),
             seen,
             bounds: Default::default(),
+            pane_zoom: initial_view.as_ref().map(|v| v.pane_zoom.clone()).unwrap_or_default(),
             hidden_fit: Default::default(),
             drag: None,
             written_layout: String::new(),
@@ -521,7 +525,7 @@ impl AppWindow {
                 local.connection(true, None, None);
                 [(String::new(), local)].into()
             },
-            initial_view: std::fs::read_to_string(file("view.json")).ok().and_then(|s| serde_json::from_str(&s).ok()),
+            initial_view,
             pointer: Point::default(),
             drag_from: None,
             titlebar_applied: None,
@@ -1089,6 +1093,7 @@ impl AppWindow {
 
     fn save_view(&mut self) {
         let mut view = crate::mirror::View::capture(&self.model);
+        view.pane_zoom.clone_from(&self.pane_zoom);
         if let Some(saved) = &self.initial_view {
             view.preserve_unloaded(saved, |machine| self.documents.get(machine.unwrap_or("")).is_some_and(|s| s.document.is_some()));
         }
@@ -1407,7 +1412,12 @@ impl AppWindow {
             let rec = self.live.get(&address);
             let dim = |k: &str, d: u64| rec.and_then(|r| r.get(k)).and_then(Value::as_u64).unwrap_or(d) as u16;
             let size_hint = (dim("cols", 120), dim("rows", 40));
-            let view = cx.new(|cx| TerminalView::attach(self.core.clone(), address.clone(), size_hint, cx));
+            let scale = self.pane_scale(id.trim_end_matches(SWAP));
+            let view = cx.new(|cx| {
+                let mut view = TerminalView::attach(self.core.clone(), address.clone(), size_hint, cx);
+                view.set_scale(scale, cx);
+                view
+            });
             self.tell_term(&view, &address, cx);
             let (block, addr) = (id.clone(), address.clone());
             let sub = cx.subscribe_in(&view, window, move |this, _, ev: &TerminalEvent, window, cx| match ev {
@@ -2719,8 +2729,18 @@ impl AppWindow {
     }
 
     fn run_key(&mut self, name: &str, args: Value, window: &mut Window, cx: &mut Context<Self>) {
+        let command = crate::keys::current(name);
+        let zoom = match command.as_str() {
+            "app.zoom_in" => Some(1),
+            "app.zoom_out" => Some(-1),
+            "app.zoom_reset" => Some(0),
+            _ => None,
+        };
+        if zoom.is_some_and(|steps| self.zoom_pane_at_pointer(steps, window, cx)) {
+            return;
+        }
         // Close the dialog holding the keyboard, not the terminal behind it.
-        let implicit_close = match crate::keys::current(name).as_str() {
+        let implicit_close = match command.as_str() {
             "tab.close" => Self::arg(&args, "id").is_none(),
             "pane.close" => Self::arg(&args, "pane").is_none(),
             _ => false,
@@ -4117,7 +4137,7 @@ impl AppWindow {
                 }
                 None => div().into_any_element(),
             },
-            Content::Mod { .. } => self.render_slot(&n.id, cx),
+            Content::Mod { .. } => pane_zoom::scale_mod(self.render_slot(&n.id, cx), self.pane_scale(&n.id)),
             Content::Agent { .. } => match self.shown_agent() {
                 Some(addr) => match self.agent_view(&n.id, &addr) {
                     Some(t) => div().size_full().child(shown_terminal(&t.view, cx)).into_any_element(),
@@ -4380,6 +4400,8 @@ impl AppWindow {
                     );
                 }
                 OverlayKind::Toast => {
+                    let (bounds, slot) = (self.bounds.clone(), o.slot.clone());
+                    let body = body.relative().child(canvas(move |b, _, _| { bounds.borrow_mut().insert(slot, b); }, |_, _, _, _| {}).absolute().size_full());
                     out.push(div().absolute().right(settings::z(16.0)).bottom(settings::z(toast_y)).child(body).into_any_element());
                     toast_y += o.size.height + 8.0;
                 }
@@ -5385,6 +5407,74 @@ mod tests {
     #[test]
     fn mod_panes_relocate_without_a_terminal_address() {
         in_own_process("mod_pane_relocation");
+    }
+
+    #[test]
+    fn zoom_shortcuts_follow_the_pointer() {
+        in_own_process("hovered_pane_zoom");
+    }
+
+    #[gpui::test]
+    fn hovered_pane_zoom(cx: &mut gpui::TestAppContext) {
+        use crate::{layout::{Axis, Content, Node}, mirror, model::Tab, settings};
+        use gpui::Modifiers;
+        use serde_json::json;
+        if !running_alone("hovered_pane_zoom") { return; }
+        let (view, cx) = open_window(cx, "quiet", "import {View, div} from 'gpui-kit'; export default class Quiet extends View {render(){return div().p(12).child('File');}}", json!({
+            "id":"root", "type":"row", "children":[
+                {"id":"sidebar", "type":"block", "size":{"px":100}, "content":{"mod":"quiet"}},
+                {"id":"context", "type":"block", "content":{"tab":"active"}}
+            ]
+        }));
+        cx.update(|window, cx| view.update(cx, |this, cx| {
+            let mut tab = Tab::new("tab", "", "terminal", "t1");
+            let file = Node::block("file", Content::Mod { name: "quiet".into(), props: json!({}) });
+            assert!(tab.root.split("terminal", Axis::Row, file, "split".into()));
+            this.model.add_space("space", "", "/tmp", tab);
+            this.model.focus_pane("terminal");
+            this.documents.get_mut("").unwrap().document = Some(mirror::Document::capture(&this.model, None));
+            this.sync(window, cx);
+        }));
+        cx.run_until_parked();
+        // A fresh test home can show the bundled What's New window.
+        cx.update(|window, cx| view.update(cx, |this, cx| {
+            let ids: Vec<_> = this.overlays.iter().map(|o| o.id.clone()).collect();
+            for id in ids { this.close_overlay(&id, window, cx); }
+        }));
+        cx.run_until_parked();
+        let zoom = |id: &str, key: &str, cx: &mut gpui::VisualTestContext| {
+            let point = view.read_with(cx, |this, _| {
+                let point = this.bounds.borrow()[id].center();
+                let expected = (id != "sidebar").then_some(id);
+                assert_eq!(this.pane_under_pointer(point).as_deref(), expected, "bounds at {point:?}: {:?}", this.bounds.borrow());
+                point
+            });
+            cx.simulate_mouse_move(point, None, Modifiers::default());
+            let modifier = if cfg!(target_os = "macos") { "cmd" } else { "ctrl" };
+            cx.simulate_keystrokes(&format!("{modifier}-{key}"));
+        };
+
+        let original = settings::zoom();
+        zoom("file", "=", cx);
+        view.read_with(cx, |this, _| {
+            assert_eq!(this.model.focused_pane().as_deref(), Some("terminal"));
+            assert_eq!(this.pane_scale("terminal"), 1.0);
+            assert_eq!(this.pane_scale("file"), 1.1);
+        });
+        assert_eq!(settings::zoom(), original);
+        let view_json = std::fs::read_to_string(crate::mods::app_dir().join("view.json")).unwrap();
+        let saved: mirror::View = serde_json::from_str(&view_json).unwrap();
+        assert_eq!(saved.pane_zoom.get("file"), Some(&1));
+
+        zoom("terminal", "-", cx);
+        zoom("file", "0", cx);
+        view.read_with(cx, |this, _| {
+            assert_eq!(this.pane_scale("terminal"), 0.9);
+            assert_eq!(this.pane_scale("file"), 1.0);
+        });
+        zoom("sidebar", "=", cx);
+        assert!(settings::zoom() > original);
+        assert_eq!(view.read_with(cx, |this, _| this.pane_scale("terminal")), 0.9);
     }
 
     #[gpui::test]

@@ -100,12 +100,16 @@ Files 支持 Markdown 预览与只读源码切换。打开文件后，点击 Pan
 Files renders Markdown with a read-only Source toggle. Open a file and choose
 Panel or New tab, then use its top-center grip to move it like a terminal pane.
 File panes retain their path and machine across moves and app restarts.
-Files 顶部支持输入目录路径，回车或点击“打开”跳转；点击“跟随终端”
+Files 顶部支持输入文件或目录路径，回车或点击“打开”预览文件或跳转目录；点击“跟随终端”
 恢复跟随当前终端。右键文件夹可复制相对路径或绝对路径到本机剪贴板。
 相对路径以当前 Files 根目录为基准，SSH 路径属于当前远端机器。
-Files accepts a folder path on the current machine (absolute, relative or ~/).
-Enter or 打开 navigates; 跟随终端 resumes following terminal cwd. Right-click
+Files accepts a file or folder path on the current machine (absolute, relative or ~/).
+Enter or 打开 opens it; 跟随终端 resumes following terminal cwd. Right-click
 a folder to copy its root-relative or absolute filesystem path locally.
+鼠标悬停在终端或文件 Panel 上时，用 ⌘=、⌘-、⌘0 单独缩放内容。
+鼠标移到标签栏或侧栏时，同一组快捷键缩放整个 App。
+Hover a terminal or file panel and use Cmd+=, Cmd+- or Cmd+0 to zoom its content.
+Use the same shortcuts over the tab bar or sidebar to zoom the whole app.
 右键文件或文件夹选择“下载…”：默认保存到本机 Downloads，可选择其他
 目录，查看进度并打开保存位置。文件保留二进制内容，文件夹保存为 .tar.gz。
 重名自动编号不覆盖；关闭进度窗口后，已启动的下载继续运行。

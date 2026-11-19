@@ -858,7 +858,7 @@ impl Render for ShellRoot {
             //
             // The default `md` is that same 16px, so a theme that says nothing
             // about type is drawn exactly as it was before this existed.
-            .text_size(tokens.typography.md.size)
+            .text_size(tokens.typography.md.size * crate::value::local_pixel_scale())
             .key_context(CONTEXT)
             .on_action(cx.listener(Self::on_action_tab))
             .on_action(cx.listener(Self::on_action_tab_prev))
