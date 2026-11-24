@@ -60,6 +60,8 @@ same workspace. Moves retain the panel id, props and terminal processes.
 Traex labels in Agents, tabs and pane headers resolve the process's own saved
 session name with a read-only probe on its machine; they refresh about every
 five seconds and fall back to its terminal title when metadata is unavailable.
+Antigravity CLI labels use the same refresh and resolve saved conversation
+titles through each foreground `agy` process's open presence lock.
 Claude Agent View background sessions use a read-only `claude agents --json --all`
 fallback on Linux, through their foreground process's own binary and profile.
 The terminal's current title must match one session name exactly; duplicate or

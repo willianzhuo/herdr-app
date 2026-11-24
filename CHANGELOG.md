@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Antigravity CLI panels show their current conversation title in Agents, the panel header and tabs that follow focus.
+
 ## [0.1.13.14] - 2026-11-19
 <!-- spotlight macos -->
 

@@ -1,17 +1,19 @@
-// Shared by the sidebar and tab bar. No process input or core status writes.
-export const SESSION_KEY = "traex.session-titles";
+// Shared by the sidebar, tab bar and pane headers.
+export const SESSION_KEY = "agent.session-titles";
+export const SESSION_PROBE_KEY = "agent.session-probe";
 export const PROBE = String.raw`import json, os, re, sqlite3, subprocess, sys
 from pathlib import Path
 
 PROC_ROOT = Path("/proc")
 UUID = r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"
+PROGRAMS = {"traex": ("traex", "traecli"), "antigravity": ("agy",)}
 
-def active_session(pid):
+def active_session(pid, program):
     # Inspect only this foreground process's open files. Neither cwd nor the
     # launch-time resume argument identifies a session after an in-app switch.
     if PROC_ROOT.exists():
         proc = PROC_ROOT / str(pid)
-        if (proc / "exe").resolve().name not in ("traex", "traecli"):
+        if (proc / "exe").resolve().name not in PROGRAMS[program]:
             return None
         paths = []
         for fd in (proc / "fd").iterdir():
@@ -21,12 +23,19 @@ def active_session(pid):
                 pass
     else:
         command = subprocess.run(["/bin/ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True, timeout=2)
-        if Path(command.stdout.strip()).name not in ("traex", "traecli"):
+        if Path(command.stdout.strip()).name not in PROGRAMS[program]:
             return None
         files = subprocess.run(["/usr/sbin/lsof", "-a", "-p", str(pid), "-Fn"], capture_output=True, text=True, timeout=3)
         paths = [line[1:] for line in files.stdout.splitlines() if line.startswith("n")]
     sessions = set()
     for path in paths:
+        if program == "antigravity":
+            # AGY keeps the current conversation's presence lock open. /resume
+            # and /fork can change it while the process and launch argv stay put.
+            presence = re.fullmatch(r"(.*/antigravity-cli)/presence/(" + UUID + r")\.lock", path)
+            if presence:
+                sessions.add((presence.group(1), presence.group(2).lower()))
+            continue
         # Older CLI builds keep a per-session writer lock rather than a rollout
         # descriptor open. The process-owned lock identifies the same session.
         lock = re.search(r"/thread-writer-locks/(" + UUID + r")\.lock$", path)
@@ -41,7 +50,38 @@ def active_session(pid):
     # workspace, which could belong to another panel or a background agent.
     return next(iter(sessions)) if len(sessions) == 1 else None
 
-def session_name(root, session):
+def antigravity_name(root, session):
+    path = Path(root) / "conversation_summaries.db"
+    wal = path.with_name(path.name + "-wal")
+    shm = path.with_name(path.name + "-shm")
+    # Immutable reads work with SQLite builds that cannot open a WAL-mode
+    # database without its sidecars. A live WAL needs a normal read-only view.
+    # Only open that view when both sidecars already exist.
+    def pending_wal():
+        try:
+            return wal.stat().st_size > 0
+        except FileNotFoundError:
+            return False
+    live = pending_wal()
+    if live and not shm.is_file():
+        return None
+    before = path.stat()
+    uri = path.as_uri() + ("?mode=ro" if live else "?mode=ro&immutable=1")
+    try:
+        db = sqlite3.connect(uri, uri=True, timeout=0.2)
+        try:
+            row = db.execute("SELECT substr(title, 1, 240) FROM conversation_summaries WHERE conversation_id=?", (session,)).fetchone()
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return None
+    if not live:
+        after = path.stat()
+        if pending_wal() or (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
+            return None
+    return row[0].strip() if row and isinstance(row[0], str) else None
+
+def traex_name(root, session):
     root = Path(root)
     fallback = None
     for path in sorted(root.glob("state_*.sqlite"), key=lambda p: int(re.search(r"state_(\d+)", p.name).group(1)), reverse=True):
@@ -84,48 +124,51 @@ result = {}
 for item in json.loads(sys.argv[1])[:64]:
     try:
         pid = item["pid"]
-        if not isinstance(pid, int) or pid <= 0:
+        program = item.get("program")
+        if not isinstance(pid, int) or pid <= 0 or program not in PROGRAMS:
             continue
-        active = active_session(pid)
+        active = active_session(pid, program)
         if not active:
             continue
-        name = session_name(*active)
+        name = (antigravity_name if program == "antigravity" else traex_name)(*active)
         # Recheck after reading: the user could have switched sessions meanwhile.
-        if name and active_session(pid) == active:
-            result[item["address"]] = {"pid": pid, "created": item.get("created"), "session": active[1], "name": name}
+        if name and active_session(pid, program) == active:
+            result[item["address"]] = {"pid": pid, "created": item.get("created"), "program": program, "session": active[1], "name": name}
     except (OSError, ValueError, subprocess.SubprocessError):
         continue
 print(json.dumps(result, ensure_ascii=False))
 `;
 
 export function sessionTitle(terminal, cache) {
-  if (terminal?.program?.key !== "traex" || terminal.state !== "live") return null;
+  if (!supported(terminal)) return null;
   const item = cache?.[terminal.address];
-  return item && item.pid === terminal.foreground?.pid && item.created === terminal.created_ms
+  return item && item.program === terminal.program.key && item.pid === terminal.foreground?.pid && item.created === terminal.created_ms
     && Date.now() - item.at < 20000 ? item.name : null;
 }
+
+const supported = t => t?.state === "live" && ["traex", "antigravity"].includes(t.program?.key);
 
 export class SessionTitles {
   constructor(api) { this.api = api; this.busy = false; }
   refresh(cx) {
     if (this.busy || !cx?.spawn) return;
     const { terminals, shared, setShared, exec } = this.api;
-    const all = terminals().filter(t => t.state === "live" && t.program?.key === "traex" && t.foreground?.pid);
+    const all = terminals().filter(t => supported(t) && t.foreground?.pid);
     const groups = new Map();
     for (const t of all) {
       const on = t.address.includes("/") ? t.address.split("/")[0] : "";
       if (!groups.has(on)) groups.set(on, []);
-      groups.get(on).push({ address:t.address, pid:t.foreground.pid, created:t.created_ms });
+      groups.get(on).push({ address:t.address, pid:t.foreground.pid, created:t.created_ms, program:t.program.key });
     }
-    const fingerprint = JSON.stringify(all.map(t => [t.address, t.foreground.pid, t.created_ms]));
-    const lease = shared("traex.session-probe");
+    const fingerprint = JSON.stringify(all.map(t => [t.address, t.foreground.pid, t.created_ms, t.program.key]));
+    const lease = shared(SESSION_PROBE_KEY);
     const now = Date.now();
     if (lease?.fingerprint === fingerprint && now - lease.at < 5000) return;
     if (!all.length) {
       if (Object.keys(shared(SESSION_KEY) ?? {}).length) setShared(SESSION_KEY, {});
       return;
     }
-    setShared("traex.session-probe", { fingerprint, at:now });
+    setShared(SESSION_PROBE_KEY, { fingerprint, at:now });
     this.busy = true;
     cx.spawn(async cx => {
       try {
@@ -140,14 +183,14 @@ export class SessionTitles {
           const cache = { ...shared(SESSION_KEY) };
           for (const item of items) {
             const t = live.get(item.address), entry = found[item.address];
-            if (t?.program?.key === "traex" && t.state === "live" && t.foreground?.pid === item.pid && t.created_ms === item.created) {
-              if (entry?.pid === item.pid && entry.created === item.created && typeof entry.name === "string" && entry.name.trim())
+            if (supported(t) && t.program.key === item.program && t.foreground?.pid === item.pid && t.created_ms === item.created) {
+              if (entry?.pid === item.pid && entry.created === item.created && entry.program === item.program && typeof entry.name === "string" && entry.name.trim())
                 cache[item.address] = { ...entry, at:Date.now() };
               else delete cache[item.address];
             }
           }
           for (const address of Object.keys(cache)) {
-            if (live.get(address)?.program?.key !== "traex" || live.get(address)?.state !== "live") delete cache[address];
+            if (!supported(live.get(address))) delete cache[address];
           }
           setShared(SESSION_KEY, cache);
         }));

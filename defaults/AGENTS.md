@@ -203,17 +203,17 @@ the highlighted line shows where it will land.
   From a mod, `setShared("tabs.width", 240)` applies and saves the width;
   null or an absent/invalid value uses 220 px. Older personal tab mods need the
   updated code to honor this preference.
-  For Traex, the custom sidebar, focused tab and panel headers prefer the
+  For Traex and Antigravity CLI, the sidebar, focused tab and panel headers prefer the
   process's actual session name over its often-generic terminal title (`work`).
   Sandboxed copies of `session-titles.js` batch read-only Python 3 probes per
   machine every five seconds, match the foreground process's open rollout or
-  writer-lock file to a session ID, and read the CLI's SQLite/index metadata.
-  `traex.session-titles` caches display names by full terminal address plus
-  foreground PID and terminal creation time; entries expire after 20 seconds.
+  writer lock (Traex) or presence lock (Antigravity) to a session ID, and read
+  the saved title. `agent.session-titles` caches display names by full terminal
+  address, program, foreground PID and terminal creation time for 20 seconds.
   No matching saved name, unavailable Python/permissions or ambiguous session
   ownership falls back to the existing title. Cwd or newest-session guesses
   are forbidden. This display-only lookup never changes core status, sends
-  process input, edits Traex settings or restarts agents.
+  process input, edits CLI settings or restarts agents.
 - The custom sidebar also keeps recognized running agents visible when their
   current status report is absent (for example after a Claude dashboard/session
   switch). These rows show a gray `?` / Status unknown, never an inferred idle,

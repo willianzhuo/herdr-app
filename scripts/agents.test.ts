@@ -262,9 +262,9 @@ for (const sort of ["priority", "grouped"]) test(`${sort}: a kept sub-agent keep
 });
 
 
-test("Traex sidebar uses the exact terminal's resolved session, independent of its sibling panel", () => {
-  const program={key:"traex",name:"Traex"}, terminal={address:"200/t1",state:"live",program,created_ms:123,foreground:{pid:11}};
-  const cache={"200/t1":{pid:11,created:123,name:"Own session",at:Date.now()},"200/t2":{pid:12,created:123,name:"Sibling session",at:Date.now()}};
+for (const key of ["traex", "antigravity"]) test(`${key} sidebar uses the exact terminal's resolved session`, () => {
+  const program={key,name:key}, terminal={address:"200/t1",state:"live",program,created_ms:123,foreground:{pid:11}};
+  const cache={"200/t1":{pid:11,created:123,program:key,name:"Own session",at:Date.now()},"200/t2":{pid:12,created:123,program:key,name:"Sibling session",at:Date.now()}};
   const title=new Function("View","claudeSession","CLAUDE_KEY","sessionTitle","SESSION_KEY","shared",`${source}; return agentTitle;`)(class {},claudeSession,CLAUDE_KEY,sessionTitle,SESSION_KEY,()=>cache);
   expect(title({address:"200/t1",program,title:"work"},{title:"work"},terminal)).toBe("Own session");
 });

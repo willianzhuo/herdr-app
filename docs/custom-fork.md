@@ -38,7 +38,7 @@ To apply these mod changes to an older running custom app, copy
 the sidebar layout at it. Update an existing directory-routing tab bar from
 `personal-config/tabs-copy-main.js`, keeping its companion directory helper and
 `session-titles.js` plus the machine map. These changes can hot reload without restarting terminals.
-Other agents continue to use their own reported/terminal titles.
+Agents can also use their own reported or terminal titles.
 
 Traex additionally resolves its real saved session name, which its OSC terminal
 title may omit (for example, every session reports `work`). A read-only Python 3
@@ -48,8 +48,13 @@ CLI's SQLite/index metadata. The sidebar, focused tab and pane headers share the
 result. Two agents in the same cwd retain different names; resume launch arguments
 and the most recently modified workspace session are never used as identity.
 
+Antigravity CLI shares the same display path. Each foreground `agy` process's
+open presence lock identifies the conversation. The probe reads just its title
+from `conversation_summaries.db` on that machine. The lookup follows the current
+conversation after `/resume` or `/fork` and picks up saved title changes.
+
 Probes batch by machine, coalesce across the sidebar/tab bar and refresh every
-five seconds. Results are tied to the full terminal address, foreground PID and
+five seconds. Results are tied to the full terminal address, program, foreground PID and
 terminal creation time, expire after 20 seconds, and are ignored after process
 exit/replacement. Ambiguous open sessions, unsaved sessions without a stored name,
 missing Python 3 or unavailable files keep the normal terminal-title fallback.

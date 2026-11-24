@@ -44,9 +44,9 @@ for (const file of ["defaults/mods/tabs/main.js", "personal-config/tabs-copy-mai
     expect(title(tab, { ...all[1], title: "Files", terminal: null }, all, {})).toBe("Files");
     expect(title(tab, { ...all[1], title: "[ ! ] Action Required | Own session", program: { key: "traex" } }, all, {})).toBe("Own session");
   });
-  test(`${file}: focused Traex panel resolves its own real session instead of its cwd title`, () => {
-    const records:any[] = [1,2].map(i => ({ address:`200/t${i}`, state:"live", program:{key:"traex"}, created_ms:123, foreground:{pid:i} }));
-    cache = Object.fromEntries(records.map((t,i)=>[t.address,{pid:i+1,created:123,name:`Session ${i+1}`,at:Date.now()}]));
+  for (const key of ["traex", "antigravity"]) test(`${file}: focused ${key} panel resolves its own session`, () => {
+    const records:any[] = [1,2].map(i => ({ address:`200/t${i}`, state:"live", program:{key}, created_ms:123, foreground:{pid:i} }));
+    cache = Object.fromEntries(records.map((t,i)=>[t.address,{pid:i+1,created:123,program:key,name:`Session ${i+1}`,at:Date.now()}]));
     const all=records.map((t,i)=>({tab:"a",pane:`p${i}`,terminal:t.address,title:"work",program:t.program,focused:i===0}));
     const tab={id:"a",name:"1",named:false}, view=new Tabs();
     let p=view.titlePanels(all)("a");
