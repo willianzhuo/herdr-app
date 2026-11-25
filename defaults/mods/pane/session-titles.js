@@ -6,14 +6,16 @@ from pathlib import Path
 
 PROC_ROOT = Path("/proc")
 UUID = r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"
-PROGRAMS = {"traex": ("traex", "traecli"), "antigravity": ("agy",)}
+# An AGY update renames the old executable while existing sessions still use
+# it. Linux may append " (deleted)" once the updater removes that file.
+PROGRAMS = {"traex": r"traex|traecli", "antigravity": r"agy(?:\.[0-9]+\.old)?(?: \(deleted\))?"}
 
 def active_session(pid, program):
     # Inspect only this foreground process's open files. Neither cwd nor the
     # launch-time resume argument identifies a session after an in-app switch.
     if PROC_ROOT.exists():
         proc = PROC_ROOT / str(pid)
-        if (proc / "exe").resolve().name not in PROGRAMS[program]:
+        if not re.fullmatch(PROGRAMS[program], (proc / "exe").resolve().name):
             return None
         paths = []
         for fd in (proc / "fd").iterdir():
@@ -23,7 +25,7 @@ def active_session(pid, program):
                 pass
     else:
         command = subprocess.run(["/bin/ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True, timeout=2)
-        if Path(command.stdout.strip()).name not in PROGRAMS[program]:
+        if not re.fullmatch(PROGRAMS[program], Path(command.stdout.strip()).name):
             return None
         files = subprocess.run(["/usr/sbin/lsof", "-a", "-p", str(pid), "-Fn"], capture_output=True, text=True, timeout=3)
         paths = [line[1:] for line in files.stdout.splitlines() if line.startswith("n")]

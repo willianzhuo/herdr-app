@@ -114,6 +114,16 @@ with sqlite3.connect(path) as db:
 
     assert run()['200/t11']['name'] == '标题一'
     assert run()['200/t12']['name'] == 'Session two'
+    exe = Path(cli).parent / 'proc/11/exe'
+    for binary in ('agy.1795600002914860367.old', 'agy.1795600002914860367.old (deleted)'):
+        exe.unlink()
+        exe.symlink_to(exe.parent / binary)
+        assert run()['200/t11']['name'] == '标题一'
+    exe.unlink()
+    exe.symlink_to(exe.parent / 'not-agy.1795600002914860367.old')
+    assert '200/t11' not in run()
+    exe.unlink()
+    exe.symlink_to(exe.parent / 'agy')
     fd = Path(cli).parent / 'proc/11/fd'
     (fd/'2').symlink_to(Path(cli)/'presence'/(second+'.lock'))
     assert '200/t11' not in run()
