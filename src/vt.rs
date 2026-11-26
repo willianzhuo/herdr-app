@@ -1216,6 +1216,20 @@ impl Vt {
         unsafe { ghostty_terminal_set(self.term, GHOSTTY_TERMINAL_OPT_SELECTION, std::ptr::null()) };
     }
 
+    pub fn clear_screen(&mut self) -> bool {
+        if !unsafe { ghostty_terminal_clear_screen(self.term) } {
+            return false;
+        }
+        self.placements_cache.get_mut().take();
+        self.feed_search();
+        // A manual clear is immediately visible, even if the program is
+        // holding synchronized output. Leave its synchronization mode alone.
+        if self.shared.held_since.is_some() {
+            unsafe { ghostty_render_state_update(self.shared.state, self.term) };
+        }
+        true
+    }
+
     pub fn write(&mut self, bytes: &[u8]) {
         self.placements_cache.get_mut().take();
         self.win32.watch(bytes);
@@ -1815,6 +1829,60 @@ mod tests {
             vt.progress_search();
         }
         panic!("terminal search did not finish incrementally");
+    }
+
+    #[test]
+    fn clear_screen_preserves_wrapped_input_and_partial_output() {
+        let mut vt = Vt::new(10, 6);
+        for _ in 0..10 {
+            vt.write(b"old line\r\n");
+        }
+        vt.write("\x1b[32m$ 日本語 abcdefghijk\x1b[1A\x1b[2G".as_bytes());
+        let before = vt.frame();
+        let (x, y) = before.cursor_cell.unwrap();
+        let prompt = before.rows[y as usize..=y as usize + 1].to_vec();
+        assert!(y > 0);
+        vt.start_search("old line");
+        finish_search(&mut vt);
+        assert!(vt.search_progress().total > 0);
+        vt.scroll_to_top();
+        vt.write(b"\x1b[");
+        assert!(vt.take_replies().is_empty());
+
+        assert!(vt.clear_screen());
+        assert!(vt.take_replies().is_empty(), "manual clear produces no PTY reply");
+        let frame = vt.frame();
+        assert_eq!(frame.cursor_cell, Some((x, 0)));
+        assert!(frame.rows[..2] == prompt);
+        assert!(frame.rows[2..].iter().flat_map(|row| row.iter()).all(|cell| cell.text.is_empty()));
+        let scrollbar = vt.scrollbar();
+        assert_eq!((scrollbar.total, scrollbar.offset), (6, 0));
+        finish_search(&mut vt);
+        assert_eq!(vt.search_progress().total, 0);
+
+        // The in-progress CSI still belongs to the process's output stream.
+        vt.write(b"5 q");
+        let frame = vt.frame();
+        assert!(frame.rows[..2] == prompt);
+        assert!(frame.cursor.unwrap().shape == CursorShape::Bar);
+        vt.write(b"Z");
+        assert_eq!(vt.frame().rows[0][x as usize].text, "Z");
+    }
+
+    #[test]
+    fn clear_screen_leaves_alternate_screen_and_primary_history_unchanged() {
+        let mut vt = Vt::new(16, 4);
+        vt.write(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+        let history = vt.scrollbar().total;
+        assert!(history > 4);
+        vt.write(b"\x1b[?1049hfull screen");
+        let before = vt.frame();
+        assert!(!vt.clear_screen());
+        let after = vt.frame();
+        assert!(before.rows == after.rows);
+        assert_eq!(before.cursor_cell, after.cursor_cell);
+        vt.write(b"\x1b[?1049l");
+        assert_eq!(vt.scrollbar().total, history);
     }
 
     #[test]

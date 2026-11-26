@@ -1,6 +1,8 @@
 //! Builds libghostty-vt from vendor/ghostty with Zig and generates bindings from its headers.
 
-use std::path::PathBuf;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 // Zig builds for the machine it runs on unless told otherwise: its CPU's
@@ -17,6 +19,48 @@ fn zig_target(target: &str) -> &'static str {
     }
 }
 
+fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if matches!(name.to_str(), Some(".git" | ".zig-cache" | "zig-out")) {
+            continue;
+        }
+        let dest = to.join(name);
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &dest)?;
+        } else {
+            fs::copy(entry.path(), dest)?;
+        }
+    }
+    Ok(())
+}
+
+/// Carry the TUI's parser-independent clear on top of the pinned Ghostty
+/// submodule. Keep the checkout intact and use the same sources for Zig and bindgen.
+fn stage_ghostty(source: &Path, dest: &Path) -> io::Result<()> {
+    match fs::remove_dir_all(dest) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    copy_tree(source, dest)?;
+    let insert = |file: &str, anchor: &str, extra: &str| -> io::Result<()> {
+        let path = dest.join(file);
+        let text = fs::read_to_string(&path)?;
+        let (before, after) = text.split_once(anchor).unwrap_or_else(|| panic!("Ghostty clear integration needs updating: {file}"));
+        fs::write(path, format!("{before}{anchor}\n{extra}{after}"))
+    };
+    let terminal = dest.join("src/terminal/c/terminal.zig");
+    use std::io::Write;
+    fs::OpenOptions::new().append(true).open(terminal)?.write_all(include_bytes!("clear-screen.zig"))?;
+    insert("src/terminal/c/main.zig", "pub const terminal_reset = terminal.reset;", "pub const terminal_clear_screen = terminal.clearScreen;")?;
+    insert("src/lib_vt.zig", "        @export(&c.terminal_reset, .{ .name = \"ghostty_terminal_reset\" });", "        @export(&c.terminal_clear_screen, .{ .name = \"ghostty_terminal_clear_screen\" });")?;
+    insert("include/ghostty/vt/terminal.h", "GHOSTTY_API void ghostty_terminal_reset(GhosttyTerminal terminal);", "GHOSTTY_API bool ghostty_terminal_clear_screen(GhosttyTerminal terminal);")?;
+    Ok(())
+}
+
 fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let src = manifest
@@ -26,14 +70,19 @@ fn main() {
     // Windows' canonical form is `\\?\C:\...`, which clang can't resolve includes against.
     let src = PathBuf::from(src.to_string_lossy().trim_start_matches(r"\\?\").to_owned());
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    for path in ["src", "build.zig", "build.zig.zon", "include"] {
+    for path in ["src", "pkg", "build.zig", "build.zig.zon", "include"] {
         println!("cargo:rerun-if-changed={}", src.join(path).display());
     }
+    println!("cargo:rerun-if-changed=clear-screen.zig");
     println!("cargo:rerun-if-env-changed=ZIG");
 
+    let staged = out.join("ghostty-src");
+    stage_ghostty(&src, &staged).expect("stage libghostty-vt sources");
+    let src = staged;
     let zig = std::env::var("ZIG").unwrap_or_else(|_| "zig".into());
     let status = Command::new(&zig)
         .current_dir(&src)
+        .env("GIT_CEILING_DIRECTORIES", &out)
         // Only the static library is linked. Ghostty builds the xcframework whenever it finds
         // xcodebuild, and with only the Command Line Tools /usr/bin/xcodebuild exists but fails.
         .args(["build", "-Demit-lib-vt", "-Demit-xcframework=false", "-Doptimize=ReleaseFast"])

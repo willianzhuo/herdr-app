@@ -715,7 +715,11 @@ The main ones:
   `terminal.keep {terminal, place?}`, `terminal.park {terminal}`,
   `terminal.peek {terminal}` (peek over the tab, with keep-as-tab and close),
   `terminal.show {terminal?, pane?}`, `terminal.search` (screen and scrollback;
-  find bar state stays with that terminal), `terminal.copy`, `terminal.paste` (copied
+  find bar state stays with that terminal), `terminal.clear {terminal?}` (Cmd+K
+  on macOS, bindable in `keys.json`; clears this window's screen and scrollback
+  for the terminal while keeping the cursor's wrapped line and position within
+  it. Alternate screens are left alone. It sends no input. Core history can
+  reappear when the window attaches again), `terminal.copy`, `terminal.paste` (copied
   files, such as Finder's or a clipboard manager's image, as if dropped; an image
   alone as `terminal.paste_image` pastes it), `terminal.paste_image` (Ctrl+V: an
   image, into a terminal on another machine: copied there, its path pasted; on

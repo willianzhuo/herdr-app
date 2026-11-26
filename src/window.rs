@@ -1618,7 +1618,7 @@ impl AppWindow {
             let view = t.view.read(cx);
             (view.owns_keyboard_focus(window, cx), view.on_screen_this_frame(), own_pane.as_deref() == Some(pane.as_str()))
         });
-        best.map(|(_, t)| t.view.clone()).ok_or_else(|| format!("terminal {address:?} is running but not shown in this window, so it has no view to scroll"))
+        best.map(|(_, t)| t.view.clone()).ok_or_else(|| format!("terminal {address:?} is running but has no view in this window"))
     }
 
     fn scroll_terminal(&self, args: &Value, window: &Window, cx: &mut Context<Self>) -> Result<(), String> {
@@ -3199,6 +3199,25 @@ impl AppWindow {
             "terminal.search" => {
                 let Some(t) = self.focused_terminal(window, cx) else { return self.fail("no focused terminal to search") };
                 t.view.update(cx, |view, cx| view.open_search(window, cx));
+                return;
+            }
+            "terminal.clear" => {
+                let target = match a.get("terminal") {
+                    Some(Value::String(address)) => self.shown_terminal_view(address, window, cx),
+                    None | Some(Value::Null) => self.focused_terminal(window, cx).map(|t| t.view.clone()).ok_or_else(|| "no focused terminal to clear".to_owned()),
+                    Some(_) => return self.fail("terminal.clear expects a terminal address"),
+                };
+                match target {
+                    Ok(view) => {
+                        let address = view.read(cx).address.clone();
+                        if view.update(cx, |v, cx| v.clear_screen(cx)) {
+                            for term in self.terms.values().filter(|term| term.address == address && term.view != view) {
+                                term.view.update(cx, |v, cx| v.clear_screen(cx));
+                            }
+                        }
+                    }
+                    Err(error) => self.fail(error),
+                }
                 return;
             }
             "terminal.copy" | "terminal.paste" | "terminal.paste_image" => {
@@ -5412,6 +5431,51 @@ mod tests {
     #[test]
     fn zoom_shortcuts_follow_the_pointer() {
         in_own_process("hovered_pane_zoom");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn clear_shortcut_changes_only_the_focused_terminal() {
+        in_own_process("clear_focused_screen");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[gpui::test]
+    fn clear_focused_screen(cx: &mut gpui::TestAppContext) {
+        use crate::{layout::{Axis, Content, Node}, model::Tab};
+        use serde_json::json;
+        if !running_alone("clear_focused_screen") { return; }
+        let (view, cx) = open_window(cx, "unused", "", json!({
+            "id":"root", "type":"block", "content":{"tab":"active"}
+        }));
+        cx.update(|window, cx| view.update(cx, |this, cx| {
+            let mut tab = Tab::new("tab", "", "one", "t1");
+            let second = Node::block("two", Content::Terminal { terminal: "t2".into() });
+            assert!(tab.root.split("one", Axis::Row, second, "split".into()));
+            this.model.add_space("space", "", "/tmp", tab);
+            this.sync(window, cx);
+        }));
+        cx.run_until_parked();
+        cx.update(|window, cx| view.update(cx, |this, cx| {
+            let ids: Vec<_> = this.overlays.iter().map(|o| o.id.clone()).collect();
+            for id in ids { this.close_overlay(&id, window, cx); }
+            for pane in ["one", "two"] {
+                this.pane_term(pane).unwrap().view.update(cx, |terminal, cx| {
+                    terminal.write_fixture(b"discard this\r\n$ pending\x1b[2D");
+                    cx.notify();
+                });
+            }
+            this.pane_focus("one", cx).unwrap().focus(window, cx);
+        }));
+        cx.simulate_keystrokes("cmd-k");
+        view.read_with(cx, |this, cx| {
+            let frame = |pane| this.pane_term(pane).unwrap().view.read(cx).fixture_screen();
+            let text = |frame: crate::vt::Frame| frame.rows.iter().flat_map(|row| row.iter().map(|cell| cell.text.as_str())).collect::<String>();
+            let first = frame("one");
+            assert_eq!(first.cursor_cell, Some((7, 0)));
+            assert_eq!(text(first), "$ pending");
+            assert_eq!(text(frame("two")), "discard this$ pending");
+        });
     }
 
     #[gpui::test]

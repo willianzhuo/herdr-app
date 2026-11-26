@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.13.15] - 2026-11-26
+<!-- spotlight macos -->
+
+### New
+- **Clear a terminal with Cmd+K.** `terminal.clear` removes the current view's screen and scrollback while keeping the cursor's wrapped line. The foreground process receives no input.
+
 ### Fixed
 - Antigravity CLI panels show their current conversation title in Agents, the panel header and tabs that follow focus, including when a CLI update renames a running process's executable.
 

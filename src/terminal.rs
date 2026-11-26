@@ -686,6 +686,34 @@ impl TerminalView {
         cx.notify();
     }
 
+    pub(crate) fn clear_screen(&mut self, cx: &mut Context<Self>) -> bool {
+        let mut grid = self.grid.borrow_mut();
+        if !grid.vt.clear_screen() {
+            return false;
+        }
+        grid.hover = None;
+        grid.link_spans.clear();
+        drop(grid);
+        self.link = None;
+        self.selecting = false;
+        self.selection_scroll = None;
+        self.scrollbar_grab = None;
+        self.scrolled = Point::default();
+        self.pending_search_nav = None;
+        cx.notify();
+        true
+    }
+
+    #[cfg(all(test, target_os = "macos"))]
+    pub(crate) fn write_fixture(&mut self, bytes: &[u8]) {
+        self.grid.borrow_mut().vt.write(bytes);
+    }
+
+    #[cfg(all(test, target_os = "macos"))]
+    pub(crate) fn fixture_screen(&self) -> vt::Frame {
+        self.grid.borrow_mut().vt.frame()
+    }
+
     /// Opens the find bar inside this terminal view. Keeping the input entity
     /// here means its query and selection survive tab switches independently.
     pub fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {

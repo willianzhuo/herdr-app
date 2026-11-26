@@ -133,6 +133,13 @@ terminal's screen and scrollback; Enter and Shift-Enter move between matches,
 Escape closes the bar while its find field has focus, and each terminal keeps its own query (reopening selects it, so typing replaces it).
 Clicking the terminal while the bar is open puts typing, including Escape, back in the program; the bar and its matches stay.
 
+`terminal.clear {terminal?}` (Cmd+K by default on macOS) clears the terminal's
+screen and scrollback in this window. The cursor's visible wrapped line moves
+to the top with its editing position intact. The foreground program receives
+no input. Alternate-screen apps are left alone. An attach can replay history
+from the core. Bind `terminal.clear` under `terminal` in `keys.json` to change
+the shortcut.
+
 It prints the created IDs (for example `{ "pane": "...", "terminal": "..." }`)
 or `{ "error": "..." }` and exits 1. Read the result, then inspect `ls` or
 `status` to confirm. Commands invoked by an agent never open a missing-argument

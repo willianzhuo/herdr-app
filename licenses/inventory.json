@@ -34,6 +34,7 @@
     "licenses/inventory.json",
     "licenses/README.md",
     "crates/ghostty-sys/build.rs",
+    "crates/ghostty-sys/clear-screen.zig",
     "vendor/ghostty/build.zig.zon",
     "vendor/ghostty/src/build/GhosttyZig.zig",
     "vendor/ghostty/src/build/GhosttyLibVt.zig",
@@ -49,6 +50,13 @@
       "source": "https://github.com/ghostty-org/ghostty/tree/291fd050b9e9c293c8adb6a140742649b7e42d3a",
       "files": [
         "vendor/ghostty/LICENSE"
+      ]
+    },
+    {
+      "name": "Herdr TUI's terminal clear patch",
+      "source": "https://github.com/herdrdev/herdr/pull/4383",
+      "files": [
+        "LICENSE"
       ]
     },
     {
