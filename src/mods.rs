@@ -807,7 +807,7 @@ pub fn run_remote(machine: &str, command: &str, args: &[String], cwd: Option<Str
     run_remote_with_limit(machine, command, args, cwd, EXEC_LIMIT)
 }
 
-fn run_remote_with_limit(machine: &str, command: &str, args: &[String], cwd: Option<String>, limit: Duration) -> Result<(i32, Vec<u8>, Vec<u8>), String> {
+pub(crate) fn run_remote_with_limit(machine: &str, command: &str, args: &[String], cwd: Option<String>, limit: Duration) -> Result<(i32, Vec<u8>, Vec<u8>), String> {
     use base64::Engine;
     let mut hc_args: Vec<String> = vec!["exec".into(), "--json".into(), "--on".into(), machine.into(), "--timeout".into(), limit.as_secs_f64().to_string()];
     if let Some(c) = cwd {

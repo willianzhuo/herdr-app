@@ -1,7 +1,7 @@
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, TextView, Input, InputState } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, openOverlay } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, openOverlay, nextCommand } from "herdr";
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -93,11 +93,23 @@ export default class Files extends View {
   init(_props, cx) {
     this.saved = new Map();
     this.roots = new Map();
+    this.linkMachines = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.pathInput = InputState.new({ placeholder: "输入文件或文件夹路径，回车打开" });
     this.pathInput.on("change", (_e, cx) => { this.navigation = null; this.pathError = null; cx.notify(); });
     this.pathInput.on("submit", (_e, cx) => this.navigate(cx));
     this.refresh(cx);
+    cx.spawn(async cx => {
+      const prefix = "open-directory:";
+      for (;;) {
+        const command = await nextCommand();
+        if (typeof command !== "string") return;
+        if (!command.startsWith(prefix)) continue;
+        let request;
+        try { request = JSON.parse(command.slice(prefix.length)); } catch { continue; }
+        this.openLinkedFolder(request, cx);
+      }
+    });
     cx.timer.every(10000, cx => { this.refresh(cx); if (this.markdown) this.loadFile(cx); });
   }
 
@@ -115,27 +127,45 @@ export default class Files extends View {
     return this.context === context && JSON.stringify(this.browseLocation()) === context.key;
   }
 
-  scope(where = location()) { return JSON.stringify([where.on, where.space]); }
+  location() {
+    const where = location();
+    return this.linkMachines.has(where.space) ? { ...where, on: this.linkMachines.get(where.space) } : where;
+  }
+
+  scope(where = this.location()) { return JSON.stringify([where.on, where.space]); }
 
   browseLocation() {
-    const where = location(), root = this.roots?.get(this.scope(where));
+    const where = this.location(), root = this.roots?.get(this.scope(where));
     return root ? { ...where, cwd: root } : where;
   }
 
+  openLinkedFolder(request, cx) {
+    const where = location();
+    if (!request || request.space !== where.space || typeof request.folder !== "string" || !request.folder) return;
+    this.navigation = null; this.pathError = null;
+    this.linkMachines.set(where.space, request.on ?? null);
+    this.openLocation(request.folder, null, this.scope(), cx);
+    cx.notify();
+  }
+
+  openLocation(root, file, scope, cx) {
+    this.roots.set(scope, root);
+    this.refresh(cx);
+    this.show(file, cx);
+    this.pathInput.set_value(entryPaths(root, file || "").absolute);
+  }
+
   navigate(cx) {
-    const value = this.pathInput.value(), where = location(), scope = this.scope(where);
+    const value = this.pathInput.value(), where = this.browseLocation(), scope = this.scope(where);
     if (!value) { this.pathError = "请输入文件或文件夹路径"; cx.notify(); return; }
     if (this.navigation?.value === value && this.navigation.scope === scope) return;
-    const request = { value, scope, base: this.browseLocation().cwd, on: where.on };
+    const request = { value, scope, base: where.cwd, on: where.on };
     this.navigation = request; this.pathError = null; cx.notify();
     cx.spawn(async cx => {
       try {
         const {root, file} = await resolvePath(value, request.base, request.on);
         if (this.navigation !== request || this.scope() !== scope || this.pathInput.value() !== value) return;
-        this.roots.set(scope, root);
-        this.refresh(cx);
-        this.show(file, cx);
-        this.pathInput.set_value(entryPaths(root, file || "").absolute);
+        this.openLocation(root, file, scope, cx);
       } catch (e) {
         if (this.navigation === request && this.scope() === scope && this.pathInput.value() === value)
           this.pathError = `无法打开路径：${e.message ?? e}`;
@@ -148,6 +178,8 @@ export default class Files extends View {
 
   follow(cx) {
     this.navigation = null; this.pathError = null;
+    this.roots.delete(this.scope());
+    this.linkMachines.delete(location().space);
     this.roots.delete(this.scope());
     this.refresh(cx); this.show(null);
     this.pathInput.set_value(this.root ?? "");

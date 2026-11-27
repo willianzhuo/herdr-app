@@ -246,6 +246,10 @@ the highlighted line shows where it will land.
   Ctrl-click (Cmd-click on macOS) a live terminal address in terminal text to
   peek at it. Bare addresses refer to the machine of the terminal showing them;
   use `machine/address` for another machine. Names and non-live addresses aren't links.
+- **Path links** in terminal output use the same link modifier. A directory
+  opens in the right Files panel and a file opens in a read-only tab. Herdr
+  resolves relative paths from the source terminal's working directory on
+  its local or SSH machine. Web URLs open in the system browser.
 - **Agent navigation order** belongs to the mods. A mod displaying agents calls
   `setAgentOrder(list.map(a => a.address))` on render so `agent.next` /
   `agent.prev` follow its list.

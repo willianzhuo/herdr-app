@@ -1,7 +1,8 @@
 //! Links in terminal text: Ghostty's URL and file path pattern, what a match
-//! points to, and handing it to the system to open.
+//! points to, and opening URLs or locating files on the source machine.
 
 use fancy_regex::Regex;
+use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -72,15 +73,61 @@ pub enum Target {
     File(PathBuf),
 }
 
-/// What a link opens. File paths count only when they exist here; relative
-/// ones need the terminal's folder.
-pub fn resolve(link: &str, cwd: Option<&Path>) -> Option<Target> {
-    let scheme = link.split_once(':').is_some_and(|(s, _)| {
-        s.len() > 1 && s.starts_with(|c: char| c.is_ascii_alphabetic()) && s.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
-    });
-    if scheme {
+/// What a link opens in a local terminal. Remote paths are checked on click.
+#[cfg(test)]
+fn resolve(link: &str, cwd: Option<&Path>) -> Option<Target> {
+    resolve_on(link, cwd, false)
+}
+
+pub fn is_uri(link: &str) -> bool {
+    link.split_once(':').is_some_and(|(scheme, rest)| {
+        matches!(scheme.to_ascii_lowercase().as_str(), "file" | "mailto" | "ssh" | "tel" | "magnet" | "news")
+            || (rest.starts_with("//")
+                && scheme.len() > 1
+                && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                && scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)))
+    })
+}
+
+pub fn resolve_on(link: &str, cwd: Option<&Path>, remote: bool) -> Option<Target> {
+    let uri = link.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("file:"));
+    if !uri && is_uri(link) {
         return Some(Target::Url(link.to_owned()));
     }
+    let link = if uri { Cow::Owned(file_uri_path(&link[5..])?) } else { Cow::Borrowed(link) };
+    if remote {
+        return Some(Target::File(PathBuf::from(link.as_ref())));
+    }
+    candidates(&link).into_iter().find_map(|link| local_path(link, cwd).map(Target::File))
+}
+
+fn file_uri_path(uri: &str) -> Option<String> {
+    // The source terminal determines the machine. A URI authority never
+    // opens another machine or becomes a network share on the desktop.
+    let path = match uri.strip_prefix("//") {
+        Some(authority) => &authority[authority.find('/')?..],
+        None => uri,
+    };
+    let path = path.split(['?', '#']).next()?.strip_prefix('/')?;
+    let mut decoded = vec![b'/'];
+    let mut bytes = path.as_bytes().iter().copied();
+    while let Some(b) = bytes.next() {
+        let b = if b == b'%' {
+            let high = (bytes.next()? as char).to_digit(16)?;
+            let low = (bytes.next()? as char).to_digit(16)?;
+            (high * 16 + low) as u8
+        } else { b };
+        if b == 0 { return None; }
+        decoded.push(b);
+    }
+    // Drive-letter file URIs spell the root /C:/ even on a POSIX desktop.
+    if decoded.get(1).is_some_and(u8::is_ascii_alphabetic) && decoded.get(2..4) == Some(b":/") {
+        decoded.remove(0);
+    }
+    String::from_utf8(decoded).ok()
+}
+
+fn local_path(link: &str, cwd: Option<&Path>) -> Option<PathBuf> {
     let home = std::env::home_dir();
     let expanded = if let Some(rest) = link.strip_prefix("~/") {
         home?.join(rest)
@@ -96,28 +143,145 @@ pub fn resolve(link: &str, cwd: Option<&Path>) -> Option<Target> {
         PathBuf::from(link)
     };
     let full = if expanded.is_absolute() { expanded } else { cwd?.join(expanded) };
-    // Windows ignores a trailing period when checking whether a path exists.
-    if !(cfg!(windows) && full.extension().is_some_and(|ext| ext.is_empty())) && full.exists() {
-        return Some(Target::File(full));
-    }
-    // The period ending a sentence, or `:42` / `:42:7` naming a place in the file.
-    let mut bare = full.to_str()?.strip_suffix('.').unwrap_or(full.to_str()?);
-    for _ in 0..2 {
-        match bare.rsplit_once(':') {
-            Some((head, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => bare = head,
-            _ => break,
-        }
-    }
-    Path::new(bare).exists().then(|| Target::File(PathBuf::from(bare)))
+    // Windows ignores trailing periods in its filesystem lookup.
+    if cfg!(windows) && full.extension().is_some_and(|ext| ext.is_empty()) { return None; }
+    std::fs::metadata(&full).is_ok_and(|m| m.is_file() || m.is_dir()).then_some(full)
 }
 
-/// Hands the target to the system's default handler.
-pub fn open(target: &Target) {
-    let arg = match target {
-        Target::Url(u) => std::ffi::OsStr::new(u),
-        Target::File(p) => p.as_os_str(),
-    };
-    open_system(arg);
+/// Prefer a literal path (including spaces or a numeric suffix). When that
+/// misses, drop common Agent line references and trailing prose.
+fn candidates(word: &str) -> Vec<&str> {
+    let mut out = vec![word];
+    let mut text = word.trim_end();
+    for _ in 0..8 {
+        let mut suffix = text;
+        for _ in 0..4 {
+            if !suffix.is_empty() && !out.contains(&suffix) { out.push(suffix); }
+            if let Some(bare) = suffix.strip_suffix('.').filter(|s| !s.ends_with('/') && !s.ends_with('.')) {
+                suffix = bare;
+            } else if let Some((bare, _)) = suffix.rsplit_once(':').filter(|(_, s)| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())) {
+                suffix = bare;
+            } else { break; }
+        }
+        let Some((left, _)) = text.rsplit_once(' ') else { break };
+        text = left.trim_end();
+    }
+    out
+}
+
+/// A file to preview, or the directory to show in Files.
+#[derive(Debug, PartialEq)]
+pub struct Location {
+    pub folder: String,
+    pub file: Option<String>,
+    pub path: String,
+}
+
+pub fn open_path(path: &Path, cwd: Option<&Path>, machine: Option<&str>) -> Result<Location, String> {
+    let path = path.to_str().ok_or("Path is not UTF-8")?;
+    if let Some(machine) = machine {
+        return remote_path(path, cwd.and_then(Path::to_str), machine);
+    }
+    let path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    let full = path.to_str().ok_or("Path is not UTF-8")?.to_owned();
+    if meta.is_dir() {
+        return Ok(Location { folder: full.clone(), file: None, path: full });
+    }
+    if !meta.is_file() { return Err("Path does not name a file or directory".into()); }
+    let folder = path.parent().and_then(Path::to_str).ok_or("File has no parent directory")?.to_owned();
+    let name = path.file_name().and_then(|name| name.to_str()).ok_or("File has no name")?.to_owned();
+    Ok(Location { folder, file: Some(name), path: full })
+}
+
+const POSIX_PATH_CHECK: &str = r#"
+base=$1; shift
+unset CDPATH
+for path do
+  case "$path" in
+    /*) full=$path ;;
+    '~'|'$HOME') full=$HOME ;;
+    '~/'*|'$HOME/'*) full=$HOME/${path#*/} ;;
+    '$PWD') full=$base ;;
+    *) [ -n "$base" ] || continue
+       full=${base%/}/${path#\$PWD/} ;;
+  esac
+  if [ -d "$full" ]; then
+    cd -P "$full" && printf 'd\0%s\0\0%s' "$PWD" "$PWD"
+    exit
+  fi
+  if [ -f "$full" ]; then
+    cd -P "${full%/*}/" && printf 'f\0%s\0%s\0%s' "$PWD" "${full##*/}" "${PWD%/}/${full##*/}"
+    exit
+  fi
+done
+exit 1
+"#;
+
+fn remote_path(path: &str, cwd: Option<&str>, machine: &str) -> Result<Location, String> {
+    use crate::mods::run_remote_with_limit;
+    let limit = std::time::Duration::from_secs(8);
+    let base = cwd.unwrap_or_default();
+    let paths = candidates(path);
+    let args = ["-c", POSIX_PATH_CHECK, "herdr-path", base].into_iter().chain(paths.iter().copied()).map(str::to_owned).collect::<Vec<_>>();
+    let (code, out, _) = match run_remote_with_limit(machine, "sh", &args, None, limit) {
+        Err(error) if error.contains("cannot start sh: program not found") => {
+            let mut script = String::from(r#"
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+& { param($base)
+    foreach ($path in $args) {
+        if ($path -eq '~' -or $path -eq '$HOME') { $path = $HOME }
+        elseif ($path.StartsWith('~/') -or $path.StartsWith('~\') -or $path.StartsWith('$HOME/')) {
+            $path = [IO.Path]::Combine($HOME, $path.Substring($path.IndexOfAny('/\'.ToCharArray()) + 1))
+        }
+        elseif (-not [IO.Path]::IsPathRooted($path)) {
+            if (-not $base) { continue }
+            if ($path.StartsWith('$PWD/')) { $path = $path.Substring(5) }
+            $path = [IO.Path]::Combine($base, $path)
+        }
+        $item = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        if ($item -is [IO.DirectoryInfo]) { $parts = @('d', $item.FullName, '', $item.FullName) }
+        elseif ($item -is [IO.FileInfo] -and [IO.File]::Exists($item.FullName)) {
+            $parts = @('f', $item.DirectoryName, $item.Name, $item.FullName)
+        }
+        else { continue }
+        [Console]::Write(($parts -join [char]0))
+        exit 0
+    }
+    exit 1
+}
+"#);
+            // Keep script data literal, including PowerShell's curly quotes.
+            for arg in std::iter::once(base).chain(paths) {
+                script.push_str(" '");
+                for ch in arg.chars() {
+                    if matches!(ch, '\'' | '‘' | '’' | '‚' | '‛') { script.push(ch); }
+                    script.push(ch);
+                }
+                script.push('\'');
+            }
+            run_remote_with_limit(machine, "powershell", &["-NoProfile".into(), "-Command".into(), script], None, limit)
+        }
+        result => result,
+    }?;
+    if code != 0 { return Err(format!("Path not found on {machine}")); }
+    parse_location(out)
+}
+
+fn parse_location(out: Vec<u8>) -> Result<Location, String> {
+    let text = String::from_utf8(out).map_err(|_| "Path is not UTF-8")?;
+    let fields: Vec<_> = text.split('\0').collect();
+    match fields.as_slice() {
+        [kind @ ("d" | "f"), folder, name, path] if !folder.is_empty() && !path.is_empty() => Ok(Location {
+            folder: (*folder).to_owned(), file: (*kind == "f").then(|| (*name).to_owned()), path: (*path).to_owned(),
+        }),
+        _ => Err("The machine returned an invalid path".into()),
+    }
+}
+
+/// Hands a URL to the system's default handler.
+pub fn open(url: &str) {
+    open_system(std::ffi::OsStr::new(url));
 }
 
 #[cfg(windows)]
@@ -275,12 +439,51 @@ mod tests {
 
     #[test]
     fn query_links_keep_their_full_target() {
-        for url in ["https://example.com/?a=1&b=2", "https://localhost:17480/login?t=abc%3D%3D", "file:///C:/Windows/System32/winver.exe"] {
+        for url in ["https://example.com/?a=1&b=2", "https://localhost:17480/login?t=abc%3D%3D"] {
             let text = format!("Dashboard: {url}");
             let range = find(&text, text.find(url).unwrap()).unwrap();
             assert_eq!(&text[range.clone()], url);
             assert_eq!(resolve(&text[range], None), Some(Target::Url(url.into())));
         }
+    }
+
+    #[test]
+    fn file_uris_use_the_source_machine() {
+        for (link, path) in [
+            ("file:///tmp/Notes%20%23%E8%B5%84%E6%96%99.md#L5", "/tmp/Notes #资料.md"),
+            ("file://remote/opt/work/", "/opt/work/"),
+            ("file:///C:/Work/README.md", "C:/Work/README.md"),
+        ] {
+            assert_eq!(resolve_on(link, None, true), Some(Target::File(path.into())));
+        }
+        assert_eq!(resolve_on("file:///tmp/%00", None, true), None);
+        assert_eq!(resolve_on("README.md:42", None, true), Some(Target::File("README.md:42".into())));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn remote_path_check_handles_directories_files_and_literal_names() {
+        let cwd = std::env::temp_dir().join(format!("herdr-remote-path-check-{}", std::process::id()));
+        let folder = cwd.join("Notes Folder");
+        let file = folder.join("Read me $(literal).md");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(&file, "").unwrap();
+        let check = |link: &str| {
+            let out = std::process::Command::new("sh")
+                .args(["-c", POSIX_PATH_CHECK, "herdr-path", cwd.to_str().unwrap()])
+                .args(candidates(link))
+                .output().unwrap();
+            assert!(out.status.success());
+            parse_location(out.stdout).unwrap()
+        };
+        let actual_folder = folder.canonicalize().unwrap().to_str().unwrap().to_owned();
+        assert_eq!(check("./Notes Folder"), Location { folder: actual_folder.clone(), file: None, path: actual_folder.clone() });
+        assert_eq!(check("$PWD/Notes Folder/Read me $(literal).md:42:7."), Location {
+            folder: actual_folder,
+            file: Some("Read me $(literal).md".into()),
+            path: file.canonicalize().unwrap().to_str().unwrap().into(),
+        });
+        std::fs::remove_dir_all(cwd).unwrap();
     }
 
     #[test]

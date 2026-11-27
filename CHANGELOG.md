@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### New
+- **Open paths from terminal and agent output.** Cmd-click on macOS or Ctrl-click elsewhere opens a directory in Files or opens a file in a preview tab. SSH paths open on the terminal's machine.
+
 ## [0.1.13.15] - 2026-11-26
 <!-- spotlight macos -->
 

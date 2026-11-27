@@ -44,6 +44,7 @@ enum LinkTarget {
 
 pub enum TerminalEvent {
     Peek(String),
+    OpenPath(PathBuf),
     TitleChanged,
     /// The program ended.
     Ended,
@@ -714,6 +715,12 @@ impl TerminalView {
         self.grid.borrow_mut().vt.frame()
     }
 
+    #[cfg(all(test, target_os = "macos"))]
+    pub(crate) fn fixture_cell_center(&self, col: f32, row: f32) -> Point<Pixels> {
+        let grid = self.grid.borrow();
+        grid.origin + point(grid.cell.width * (col + 0.5), grid.cell.height * (row + 0.5))
+    }
+
     /// Opens the find bar inside this terminal view. Keeping the input entity
     /// here means its query and selection survive tab switches independently.
     pub fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -930,25 +937,30 @@ impl TerminalView {
         let (x, y) = local(&g, pos);
         let (col, row) = (x / f32::from(g.cell.width), y / f32::from(g.cell.height));
         let mut target = None;
+        let remote = self.address.contains('/');
+        let resolve = |link: &str| links::resolve_on(link, self.cwd.as_deref(), remote);
         let hit = g.vt.link_at(col as u16, row as u16, |text, at, joined| {
+            let matched = links::find(text, at);
+            let word = (!joined).then(|| links::word(text, at)).flatten();
+            if matched.as_ref().is_none_or(|range| !links::is_uri(&text[range.clone()]))
+                && let Some(range) = &word
+                && let Some(address) = crate::mods::terminal_address(&text[range.clone()], &self.address)
+            {
+                target = Some(LinkTarget::Terminal(address));
+                return Some(range.clone());
+            }
             // In lines joined back together only a file that exists proves the join right.
-            if let Some(range) = links::find(text, at)
-                && let Some(link) = links::resolve(&text[range.clone()], self.cwd.as_deref())
-                && (!joined || matches!(link, links::Target::File(_)))
+            if let Some(range) = matched.or_else(|| word.filter(|range| text[range.clone()].contains(['/', '.'])))
+                && let Some(link) = resolve(&text[range.clone()])
+                && (!joined || (!remote && matches!(link, links::Target::File(_))))
             {
                 target = Some(LinkTarget::External(link));
                 return Some(range);
             }
-            if joined {
-                return None;
-            }
-            let range = links::word(text, at)?;
-            let address = crate::mods::terminal_address(&text[range.clone()], &self.address)?;
-            target = Some(LinkTarget::Terminal(address));
-            Some(range)
+            None
         })?;
         // OSC 8 links bypass text detection.
-        let target = target.or_else(|| links::resolve(&hit.target, self.cwd.as_deref()).map(LinkTarget::External))?;
+        let target = target.or_else(|| resolve(&hit.target).map(LinkTarget::External))?;
         Some((target, hit.spans))
     }
 
@@ -1994,7 +2006,8 @@ impl Render for TerminalView {
                     && let Some((target, _)) = this.link_at(ev.position)
                 {
                     match target {
-                        LinkTarget::External(target) => links::open(&target),
+                        LinkTarget::External(links::Target::Url(url)) => links::open(&url),
+                        LinkTarget::External(links::Target::File(path)) => cx.emit(TerminalEvent::OpenPath(path)),
                         LinkTarget::Terminal(address) => cx.emit(TerminalEvent::Peek(address)),
                     }
                     return;

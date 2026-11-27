@@ -10,6 +10,7 @@ mod movable;
 mod pane_drag;
 mod pane_size;
 mod pane_zoom;
+mod path_links;
 mod titlebar;
 
 use crate::layout::{Axis, Background as Paint, Content, Fit, HeaderContent, Kind, Line, Node, PaneFrame, Size as Span};
@@ -1420,8 +1421,9 @@ impl AppWindow {
             });
             self.tell_term(&view, &address, cx);
             let (block, addr) = (id.clone(), address.clone());
-            let sub = cx.subscribe_in(&view, window, move |this, _, ev: &TerminalEvent, window, cx| match ev {
+            let sub = cx.subscribe_in(&view, window, move |this, view, ev: &TerminalEvent, window, cx| match ev {
                 TerminalEvent::Peek(address) => this.peek_terminal(address, window, cx),
+                TerminalEvent::OpenPath(path) => this.open_path_link(&addr, view.read(cx).cwd.clone(), path.clone(), window, cx),
                 TerminalEvent::TitleChanged => this.publish(cx),
                 TerminalEvent::Ended => this.terminal_ended(&block, window, cx),
                 TerminalEvent::ContextMenu(at) => {
@@ -5437,6 +5439,92 @@ mod tests {
     #[test]
     fn clear_shortcut_changes_only_the_focused_terminal() {
         in_own_process("clear_focused_screen");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn path_links_open_files_and_tabs() {
+        in_own_process("click_terminal_paths");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[gpui::test]
+    fn click_terminal_paths(cx: &mut gpui::TestAppContext) {
+        use crate::{layout::Content, mirror, model::Tab, mods};
+        use gpui::Modifiers;
+        use serde_json::json;
+        if !running_alone("click_terminal_paths") { return; }
+        let (view, cx) = open_window(cx, "file-panel", r#"
+            import {View, div} from 'gpui-kit';
+            import {nextCommand, setShared} from 'herdr';
+            export default class FileFixture extends View {
+                init(_props, cx) {
+                    cx.spawn(async () => {
+                        const command = await nextCommand();
+                        setShared('path-link.fixture', command);
+                    });
+                }
+                render() { return div(); }
+            }
+        "#, json!({
+            "id":"root", "type":"row", "children":[
+                {"id":"context", "type":"block", "content":{"tab":"active"}},
+                {"id":"right", "type":"column", "hidden":true, "size":{"px":220}, "children":[
+                    {"id":"right-stack", "type":"stack", "active":"other", "children":[
+                        {"id":"other", "type":"block", "content":{"mod":"file-panel"}},
+                        {"id":"files", "type":"block", "content":{"mod":"file-panel"}}
+                    ]}
+                ]}
+            ]
+        }));
+        let home = mods::app_dir();
+        let directory = home.join("fixture");
+        let file = directory.join("README.md");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(&file, "# Example").unwrap();
+        cx.update(|window, cx| view.update(cx, |this, cx| {
+            this.model.add_space("space", "", home.to_str().unwrap(), Tab::new("tab", "", "terminal", "t1"));
+            let slot = this.documents.get_mut("").unwrap();
+            slot.available = true;
+            slot.document = Some(mirror::Document::capture(&this.model, None));
+            this.sync(window, cx);
+        }));
+        cx.run_until_parked();
+        cx.update(|window, cx| view.update(cx, |this, cx| {
+            let overlays: Vec<_> = this.overlays.iter().map(|o| o.id.clone()).collect();
+            for id in overlays { this.close_overlay(&id, window, cx); }
+            this.pane_term("terminal").unwrap().view.update(cx, |terminal, cx| {
+                terminal.cwd = Some(home);
+                terminal.write_fixture(b"./fixture\r\nfixture/README.md:3");
+                cx.notify();
+            });
+        }));
+        cx.run_until_parked();
+        let click_row = |cx: &mut gpui::VisualTestContext, row| {
+            let point = view.read_with(cx, |this, cx| this.pane_term("terminal").unwrap().view.read(cx).fixture_cell_center(3.0, row));
+            cx.simulate_click(point, Modifiers { platform: true, ..Modifiers::default() });
+            cx.run_until_parked();
+        };
+        click_row(cx, 0.0);
+        let actual_dir = directory.canonicalize().unwrap();
+        let expected = format!("open-directory:{}", json!({"space":"space", "on":null, "folder":actual_dir}));
+        assert_eq!(mods::shared("path-link.fixture"), Some(json!(expected)));
+        view.read_with(cx, |this, _| {
+            assert!(!this.chrome.find("right").unwrap().hidden);
+            assert!(this.copies.contains_key("files"));
+            assert_eq!(this.model.active_tab().unwrap().id, "tab");
+        });
+        click_row(cx, 1.0);
+        view.read_with(cx, |this, _| {
+            let tab = this.model.active_tab().unwrap();
+            assert_ne!(tab.id, "tab");
+            assert_eq!(tab.name, "README.md");
+            let pane = tab.root.find(&tab.focused_pane().unwrap()).unwrap();
+            let Content::Mod { name, props } = pane.content().unwrap() else { panic!("expected a file mod"); };
+            assert_eq!(name, "file-panel");
+            assert_eq!(props, &json!({"path":file.canonicalize().unwrap(), "on":null, "title":"README.md", "folder":actual_dir}));
+            assert!(this.pane_term("terminal").is_some());
+        });
     }
 
     #[cfg(target_os = "macos")]

@@ -145,7 +145,7 @@ function element(kind: string, value?: unknown): any {
 }
 const flatten = (node: any): any[] => typeof node === "object" && node !== null ? [node,...(node.kids ?? []).flatMap(flatten)] : [];
 
-function previewHarness(reader: () => Promise<string | null>, fixed?: any) {
+function previewHarness(reader: () => Promise<string | null>, fixed?: any, commands: string[] = []) {
   const tasks: Promise<unknown>[] = [], reads: unknown[] = [], editors: any[] = [], runs: any[] = [], overlays: any[] = [];
   let load = reader;
   let panelProps = fixed;
@@ -155,7 +155,7 @@ function previewHarness(reader: () => Promise<string | null>, fixed?: any) {
   const context = {cwd:"/remote/work",on:"box",space:"space"};
   const theme = new Proxy({}, {get:()=>"#112233"});
   const Files = new Function("View","div","svg","v_flex","h_flex","Editor","EditorState","TextView","Input","InputState",
-    "spaces","panes","focused","exec","readTextFile","watchFolder","theme","settings","window","run","openOverlay",
+    "spaces","panes","focused","exec","readTextFile","watchFolder","theme","settings","window","run","openOverlay","nextCommand",
     source.replace(/^import .*;\n/gm, "").replace("export default class Files", "class Files") + ";return Files;")(
       class {}, () => element("div"), () => element("svg"), () => element("column"), () => element("row"),
       {new:(state: any)=>element("editor",state)}, {new:(options: any)=>{const state={...options,released:false,release(){this.released=true;}};editors.push(state);return state;}},
@@ -163,7 +163,7 @@ function previewHarness(reader: () => Promise<string | null>, fixed?: any) {
       {new:(state:any)=>element("input",state)}, {new:(options:any)=>({text:options.value??"",handlers:new Map(),value(){return this.text;},set_value(v:string){this.text=v;},on(k:string,fn:any){this.handlers.set(k,fn);}})},
       () => [{id:workspace,active:true,machine,folder:browsingFolder,tabs:[{id:"tab",active:true}]}], () => [{pane:"pane",tab:"tab",focused:true,cwd:browsingFolder}], () => ({pane:"pane"}),
       (...args:any[])=>execute(...args), async(...args: any[])=>{reads.push(args);return load();}, async()=>{}, () => theme,
-      () => ({font_family:"Monospace"}), () => ({platform:"linux"}), (...args: any[])=>runs.push(args), (spec:any)=>overlays.push(spec),
+      () => ({font_family:"Monospace"}), () => ({platform:"linux"}), (...args: any[])=>runs.push(args), (spec:any)=>overlays.push(spec), async()=>commands.shift(),
   );
   const Panel = fixed ? new Function("Files","div","props",panelSource.replace(/^import .*;\n/gm, "").replace("export default class FilePanel","class FilePanel")+";return FilePanel;")(Files,()=>element("div"),()=>panelProps) : Files;
   const view = new Panel();
@@ -389,6 +389,28 @@ test("Files opens a remote file path and returns to its parent folder", async ()
   h.click("files-back");
   expect(h.view.file).toBeNull();
   expect(h.view.pathInput.value()).toBe("/remote/资料");
+});
+
+test("a directory link opens Files on the source machine until Follow is clicked", async () => {
+  const command = (space:string, on:string, folder:string) => "open-directory:" + JSON.stringify({space,on,folder});
+  const h = previewHarness(async()=>"", undefined, [
+    command("space","source","/home/source/Notes Folder"),
+    command("other-workspace","other","/not-active"),
+  ]);
+  await h.flush();
+  expect(h.view.root).toBe("/home/source/Notes Folder");
+  expect(h.view.on).toBe("source");
+  h.setExec(async(_command:string,args:string[],options:any)=>{
+    if(args[2]!=="files-path")return {code:0,stdout:""};
+    expect(args.slice(3)).toEqual(["./reports","/home/source/Notes Folder"]);
+    expect(options.on).toBe("source");
+    return {code:0,stdout:"d\0/home/source/Notes Folder/reports\0"};
+  });
+  h.view.pathInput.set_value("./reports");h.click("files-path-open");await h.flush();
+  expect(h.view.root).toBe("/home/source/Notes Folder/reports");
+  h.click("files-path-follow");await h.flush();
+  expect(h.view.root).toBe("/remote/work");
+  expect(h.view.on).toBe("box");
 });
 
 test("Files discards pending navigation after workspace switches or input edits", async () => {

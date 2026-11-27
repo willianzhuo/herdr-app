@@ -57,6 +57,10 @@ uses `{path, on, title, folder}` props to pin its file and machine; it does not
 follow terminal focus or write the file. Markdown has Preview / Source modes.
 Move a file panel by its top-center grip, including between tabs within the
 same workspace. Moves retain the panel id, props and terminal processes.
+Cmd-click on macOS or Ctrl-click elsewhere opens a path in terminal or agent
+output. Directories open in the right Files panel and files open in read-only
+tabs. Paths resolve on the source terminal's machine and relative paths use
+its working directory. Web links open in the system browser.
 Traex labels in Agents, tabs and pane headers resolve the process's own saved
 session name with a read-only probe on its machine; they refresh about every
 five seconds and fall back to its terminal title when metadata is unavailable.
